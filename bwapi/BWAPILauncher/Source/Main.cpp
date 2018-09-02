@@ -37,8 +37,10 @@ int main() {
         h->onGameEnd();
         h->bwgame.leaveGame();
       } while (!h->bwgame.gameClosed() && h->autoMenuManager.autoMenuRestartGame != "" && h->autoMenuManager.autoMenuRestartGame != "OFF");
+      return 0;
     } catch (const std::exception& e) {
       printf("Error: %s\n", e.what());
+      return 1;
     }
   });
 
