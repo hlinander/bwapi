@@ -66,7 +66,7 @@ namespace BWAPI
       return;
 
     // Existence test
-    switch ( command.type )
+    switch ( command.type.getID() )
     {
     case UnitCommandTypes::Enum::Cancel_Construction:
     case UnitCommandTypes::Enum::Cancel_Research:
@@ -79,7 +79,7 @@ namespace BWAPI
     }
 
     // Move test
-    switch ( command.type )
+    switch ( command.type.getID() )
     {
     case UnitCommandTypes::Enum::Follow:
     case UnitCommandTypes::Enum::Hold_Position:
@@ -152,7 +152,7 @@ namespace BWAPI
       if (savedExtra2 == -1)
         savedExtra2 = unit->self->buildUnit;
       unitType = UnitType(savedExtra);
-      if ((frame > Broodwar->getLatency() + 1 && Broodwar->getLatency() == 2) || 
+      if ((frame > Broodwar->getLatency() + 1 && Broodwar->getLatency() == 2) ||
           (frame > Broodwar->getLatency() + 2 && Broodwar->getLatency() > 2))
         return;
       if (unitType.getRace() == Races::Terran)
