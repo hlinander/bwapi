@@ -5,7 +5,7 @@
 #include <ctime>
 #include "AIStructs.h"
 
-const float LR = 0.0001;  
+const float LR = 0.001;  
 
 int main(int argc, char* argv[])
 {
