@@ -1,0 +1,5 @@
+#/usr/bin/env bash
+while [ 1 ]
+do
+BWAPI_CONFIG_AUTO_MENU__CHARACTER_NAME=model_$1 OPENBW_LAN_MODE=FILE OPENBW_FILE_READ=fifor OPENBW_FILE_WRITE=fifow ./BWAPILauncher 
+done
