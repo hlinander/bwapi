@@ -48,11 +48,11 @@ Action argMax(Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> zout) {
 void saveModel(const Model &m, std::string name) {
 	std::stringstream ss;
 	cereal::BinaryOutputArchive ar{ss};
-	std::cout << "Cerealising..." << std::endl;
+	// std::cout << "Cerealising..." << std::endl;
 	ar(cereal::make_nvp("brain", m));
 	std::ofstream out(name, std::ios_base::binary);
 	auto serial{ ss.str() };
-	std::cout << "Writing..." << std::endl;
+	// std::cout << "Writing..." << std::endl;
 	out.write(serial.c_str(), serial.length());
 }
 

@@ -254,10 +254,10 @@ namespace BWAPI
       switch(flag)
       {
       case BWAPI::Flag::CompleteMapInformation:
-        this->sendText("Enabled Flag CompleteMapInformation");
+        // this->sendText("Enabled Flag CompleteMapInformation");
         break;
       case BWAPI::Flag::UserInput:
-        this->sendText("Enabled Flag UserInput");
+        // this->sendText("Enabled Flag UserInput");
         break;
       }
     }

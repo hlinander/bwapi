@@ -477,8 +477,8 @@ void GameImpl::initializeAIModule()
         this->deleteClient = true;
 
         // Hide success strings in tournament mode
-        if ( !hTournamentModule )
-          Broodwar << Text::Green << "Loaded the AI Module: " << dll << std::endl;
+        // if ( !hTournamentModule )
+        //   Broodwar << Text::Green << "Loaded the AI Module: " << dll << std::endl;
         externalModuleConnected = true;
 
         // Strip the path from the module name
@@ -516,7 +516,7 @@ void GameImpl::initializeAIModule()
     }
   }
 
-  if ( !hTournamentModule ) // If tournament mode wasn't initialized
-    sendText("BWAPI %s.%d %s is now live using \"%s\".", BWAPI_VER, SVN_REV, BUILD_STR, moduleName.c_str() );
+  // if ( !hTournamentModule ) // If tournament mode wasn't initialized
+    //sendText("BWAPI %s.%d %s is now live using \"%s\".", BWAPI_VER, SVN_REV, BUILD_STR, moduleName.c_str() );
 }
 

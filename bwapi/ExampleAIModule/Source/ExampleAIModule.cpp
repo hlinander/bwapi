@@ -31,10 +31,10 @@ static std::string get_dbname() {
 static std::string get_resname() {
 	std::stringstream ss;
 	auto tokens = get_tokens(Broodwar->self()->getName());
-	std::cout << "Tokens: ";
-	for (auto& token : tokens) {
-		std::cout << token << " : ";
-	}
+	// std::cout << "Tokens: ";
+	// for (auto& token : tokens) {
+	// 	std::cout << token << " : ";
+	// }
 	ss << "results/" << tokens[0] << "_result_" << tokens[1];
 	return ss.str();
 }
@@ -66,7 +66,7 @@ Action getAction(State &s, Model &m) {
 	// i = 0: v = 1 => 
 	for (int i = 0; i < Action::MAX_ACTION; ++i) {
 		v += distribution(i);
-		if (r <= v) {
+		if (r <= v || i == Action::MAX_ACTION - 1) {
 			action = static_cast<Action>(i);
 			m.probs.push_back(distribution(i));
 			break;
@@ -226,16 +226,16 @@ void ExampleAIModule::onStart()
 	if (nullptr != getenv("DEBUG")) {
 		debug = true;
 	}
-	std::cout << "Loading model at " << get_dbname() << std::endl;
+	// std::cout << "Loading model at " << get_dbname() << std::endl;
 	if (!loadModel(model, get_dbname())) {
 		Broodwar->sendText("My pants are on my head!");
 	}
 	// Hello World!
-	Broodwar->sendText("Hello world!");
+	// Broodwar->sendText("Hello world!");
 
 	// Print the map name.
 	// BWAPI returns std::string when retrieving a string, don't forget to add .c_str() when printing!
-	Broodwar << "The map is " << Broodwar->mapName() << "!" << std::endl;
+	// Broodwar << "The map is " << Broodwar->mapName() << "!" << std::endl;
 
 	// Enable the UserInput flag, which allows us to control the bot and type messages.
 	//Broodwar->enableFlag(Flag::UserInput);
@@ -268,8 +268,8 @@ void ExampleAIModule::onStart()
 	{
 		// Retrieve you and your enemy's races. enemy() will just return the first enemy.
 		// If you wish to deal with multiple enemies then you must use enemies().
-		if (Broodwar->enemy()) // First make sure there is an enemy
-			Broodwar << "The matchup is " << Broodwar->self()->getRace() << " vs " << Broodwar->enemy()->getRace() << std::endl;
+		// if (Broodwar->enemy()) // First make sure there is an enemy
+		// 	Broodwar << "The matchup is " << Broodwar->self()->getRace() << " vs " << Broodwar->enemy()->getRace() << std::endl;
 	}
 	start_time = time(NULL);
 	force_lose = false;
@@ -284,9 +284,9 @@ void ExampleAIModule::onEnd(bool isWinner)
 	//	out << (isWinner ? "1" : "0");
 	//}
 	model.winner = (!force_lose) && isWinner;
-	std::cout << "THE END! I AM " << (isWinner ? "WINNER" : "LOOSER") << std::endl;
+	// std::cout << "THE END! I AM " << (isWinner ? "WINNER" : "LOOSER") << std::endl;
 	saveModel(model, get_resname());
-  std::cout << "THEOTHERSIDE!" << std::endl;
+//   std::cout << "THEOTHERSIDE!" << std::endl;
 }
 
 static uint32_t frames = 0;
@@ -438,20 +438,20 @@ void ExampleAIModule::onFrame()
 	} // closure: unit iterator
 
 	if (did_lose) {
-		Broodwar->sendText("No my workers are gone. Honorable soduku.");
+		// Broodwar->sendText("No my workers are gone. Honorable soduku.");
 		//onEnd(false);
 		//Broodwar->sendText("win");
 		Broodwar->leaveGame();
 	}
 	double elapsed = difftime(time(NULL), start_time);
-	if (debug)
-		std::cout << "@ ELAPSED " << elapsed << std::endl;
+	// if (debug)
+	// 	std::cout << "@ ELAPSED " << elapsed << std::endl;
 	if (frames == 2400) {
-		Broodwar->sendText("timeout");
+		// Broodwar->sendText("timeout");
 		force_lose = true;
 	}
 	else if(frames > 2500) {
-		std::cout << "@@@ Timeout!" << std::endl;
+		//std::cout << "@@@ Timeout!" << std::endl;
 		//onEnd(false);
 		Broodwar->leaveGame();
 	}
@@ -487,7 +487,7 @@ void ExampleAIModule::onPlayerLeft(BWAPI::Player player)
 {
 	// Interact verbally with the other players in the game by
 	// announcing that the other player has left.
-	Broodwar->sendText("Goodbye %s!", player->getName().c_str());
+	// Broodwar->sendText("Goodbye %s!", player->getName().c_str());
 }
 
 void ExampleAIModule::onNukeDetect(BWAPI::Position target)

@@ -5,7 +5,7 @@
 #include <ctime>
 #include "AIStructs.h"
 
-const float LR = 0.00001;  
+const float LR = 0.0001;  
 
 int main(int argc, char* argv[])
 {
@@ -53,28 +53,43 @@ int main(int argc, char* argv[])
 		loadModel(m, argv[2]);
 		std::ifstream infile(argv[3]);
 		std::string line;
+		int winners = 0;
+		int total = 0;
+		int total_frames = 0;
+		int attack = 0;
 		while (std::getline(infile, line)) {
-			std::cout << "Updating from " << line << std::endl;
+			// std::cout << "Updating from " << line << std::endl;
 			Model c = Model();
 			loadModel(c, line);
-			std::cout << c.get_frames() << " actions" << std::endl;
+			total++;
+			if(c.winner)
+				winners++;
+			// std::cout << c.get_frames() << " actions" << std::endl;
 			for (int frame = 0; frame < c.get_frames(); ++frame) {
+				total_frames++;
+				if(c.actions[frame] == Action::ATTACK)
+					attack++;
 				int distance_from_end = c.get_frames() - frame;
 				float discount = pow(0.99, distance_from_end);
 				auto grads = c.saved_grads(frame);
-				m.descent(grads, discount * (c.winner ? LR : (-LR)));
+				m.descent(grads, discount * (c.winner ? LR : (-0.1 * LR)));
 				if (frame == 0) {
-					std::cout << "Mean hidden " << m.hidden.mean() << std::endl;
-					std::cout << "Mean out " << m.out.mean() << std::endl;
-					std::cout << "[Frame 0] Mean grads * lr: ";
-					for (auto& grad : grads) {
-						std::cout << LR * grad.mean() << " : ";
-					}
-					std::cout << std::endl;
+					// std::cout << "Mean hidden " << m.hidden.mean() << std::endl;
+					// std::cout << "Mean out " << m.out.mean() << std::endl;
+					// std::cout << "[Frame 0] Mean grads * lr: ";
+					// for (auto& grad : grads) {
+					// 	std::cout << LR * grad.mean() << " : ";
+					// }
+					// std::cout << std::endl;
 				}
 			}
 		}
 		saveModel(m, std::string(argv[4]));
+		int attack_percent = 0;
+		if(total_frames > 0) {
+			attack_percent = static_cast<int>(100.0 * static_cast<float>(attack) / static_cast<float>(total_frames));
+		}
+		std::cout << total << " games with " << winners << " winners " << attack_percent << "% attacks" << std::endl;
 	}
 }
 
