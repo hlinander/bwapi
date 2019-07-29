@@ -24,7 +24,19 @@ enum Param {
 	ME_HP,
 	ME_ATTACKED,
 	ME_REPAIRED,
+	ME_SCV,
+	ME_MARINE,
 	MAX_PARAM
+};
+
+enum BuildParam {
+	MINERALS,
+	GAS,
+	N_SCVS,
+	N_MARINES,
+	N_SUPPLY_DEPOTS,
+	N_BARRACKS,
+	MAX_BUILD
 };
 
 const std::map<Param, const char*> ParamS = {
@@ -37,51 +49,93 @@ const std::map<Param, const char*> ParamS = {
 	{ Param::ENEMY_HP, "ENEMY_HP" },
 	{ Param::ME_HP, "ME_HP" },
 	{ Param::ME_ATTACKED, "ME_ATTACKED" },
-	{ Param::ME_REPAIRED, "ME_REPAIRED" }
+	{ Param::ME_REPAIRED, "ME_REPAIRED" },
+	{ Param::ME_SCV, "ME_SCV" },
+	{ Param::ME_MARINE, "ME_MARINE" }
 };
 
-enum Action {
+enum class BA {
+	BUILD_SCV = 0,
+	BUILD_SUPPLY,
+	BUILD_BARRACK,
+	BUILD_MARINE,
+	IDLE,
+	MAX
+};
+
+enum class UA {
 	ATTACK = 0,
 	REPAIR,
 	FLEE,
-	MAX_ACTION
+	MINE,
+	MAX
 };
 
-const std::map<Action, const char*> ActionS = {
-	{Action::ATTACK, "ATTACK"},
-	{Action::REPAIR, "REPAIR"},
-	{Action::FLEE, "FLEE"}
-};
+static const char* action_to_string(UA a) {
+	static const std::map<UA, const char*> UnitActionS = {
+		{UA::ATTACK, "ATTACK"},
+		{UA::REPAIR, "REPAIR"},
+		{UA::FLEE, "FLEE"},
+		{UA::MINE, "MINE"}
+	};
+	return UnitActionS.at(a);
+}
 
-const int N_HIDDEN = 10;
+#define STRACTION(x) case x: return #x
 
-struct State {
-	State() {
-		edata.setZero();
-		for (int i = 0; i < Param::MAX_PARAM; ++i) {
-			data[i] = 0.0;
-		}
+static const char* action_to_string(BA a) {
+	switch(a) {
+		STRACTION(BA::BUILD_SCV);
+		STRACTION(BA::BUILD_BARRACK);
+		STRACTION(BA::BUILD_MARINE);
+		STRACTION(BA::BUILD_SUPPLY);
+		STRACTION(BA::IDLE);
+	}
+	return "BA::Unknown";
+}
+
+template<typename ActionEnum>
+struct Action {
+	typedef ActionEnum Type;
+	static constexpr const size_t MAX = static_cast<size_t>(ActionEnum::MAX);
+	Action(ActionEnum a = static_cast<ActionEnum>(0)) : action{a} {}
+	operator int() const {
+		return static_cast<int>(action);
+	}
+	Action<ActionEnum>& operator =(const int rhs) {
+		action = static_cast<Action>(rhs);
+		return *this;
 	}
 
-	friend std::ostream & operator<<(std::ostream &os, const State &m) {
-		os << "[State] ";
-		for (int i = 0; i < Param::MAX_PARAM; ++i) {
-			std::cout << ParamS.at(static_cast<Param>(i)) << ": " << m.edata[i] << ", ";
-		}
-		os << std::endl;
-		return os;
+	bool operator ==(const ActionEnum rhs) {
+		return action == rhs;
+	}
+
+	Action<ActionEnum>& operator++() {
+		action = static_cast<ActionEnum>(static_cast<int>(action) + 1);
+		return *this;
 	}
 
 	template <class Archive>
 	void serialize(Archive &a)
 	{
-		a(cereal::make_nvp("edata", edata));
+		a(action);
 	}
 
-	float data[Param::MAX_PARAM];
-	Eigen::Matrix<float, Param::MAX_PARAM, 1> edata;
+	const char* name() const {
+		return action_to_string(action);
+	}
+
+	ActionEnum action;
 };
 
+
+const int N_HIDDEN = 10;
+
+template<size_t N>
+using State = Eigen::Matrix<float, N, 1>;
+using UnitState = State<static_cast<size_t>(Param::MAX_PARAM)>;
+using BuildState = State<static_cast<size_t>(BuildParam::MAX_BUILD)>;
 //template<int rows, int cols>
 //Eigen::Matrix<float, rows, cols> grads(Dense &layer) {
 //	Eigen::Matrix<float, rows, cols> ret;
@@ -92,23 +146,22 @@ float relu(const float x);
 float drelu(const float x);
 
 //template<int rows, int cols>
-Action argMax(Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> zout);
 Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> softmax(Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> in);
 
+template<typename TAction, size_t StateSize>
 struct Model {
-	Model() :
-		winner(false)
+	typedef State<StateSize> StateType;
+	Model()
 	{
-		params.resize(Action::MAX_ACTION);
+		params.resize(TAction::MAX);
 		for (auto &ref : params) {
-			ref.resize(Param::MAX_PARAM);
+			ref.resize(StateSize);
 		}
 		hidden.setRandom();
 		out.setRandom();
 	}
 
 	friend std::ostream & operator<<(std::ostream &os, const Model &m) {
-		os << "Model is " << (m.winner ? "WINNER" : "looooser") << std::endl;
 		os << "Model took " << m.actions.size() << " actions " << std::endl;
 		os << "Hidden:" << std::endl << m.hidden << std::endl;
 		os << "Output:" << std::endl << m.out << std::endl;
@@ -124,28 +177,44 @@ struct Model {
 		a(cereal::make_nvp("dhiddens", dhiddens));
 		a(cereal::make_nvp("douts", douts));
 		a(cereal::make_nvp("actions", actions));
-		a(cereal::make_nvp("winner", winner));
 		a(cereal::make_nvp("states", states));
 		a(cereal::make_nvp("probs", probs));
 	}
 
-	Eigen::Matrix<float, Action::MAX_ACTION, 1> forward(const State &s) {
+	Eigen::Matrix<float, TAction::MAX, 1> forward(const StateType &s) {
 		//std::cout << "State: " << s.edata << std::endl;
 		//std::cout << 
-		zhidden = hidden * s.edata;
+		zhidden = hidden * s;
 		ahidden = zhidden.unaryExpr(&relu);
 		return out * ahidden;
 	}
 
-	std::vector<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>> grads(const State &s, const Action a) {
+	TAction get_action(const StateType &s) {
+		auto logp{forward(s)};
+		auto distribution = softmax(logp);
+		float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+		float v = 0;
+		TAction action;
+		for (; action != TAction::MAX; ++action) {
+			v += distribution(static_cast<int>(action));
+			if (r <= v || action == TAction::MAX - 1) {
+				probs.push_back(distribution(static_cast<int>(action)));
+				break;
+			}
+		}
+		grads(s, action);
+		return action;
+	}
+
+	std::vector<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>> grads(const StateType &s, const TAction a) {
 		// DlogpDout = DlogpDzout * DzoutDout = dlogp * ahidden
-		//Eigen::Matrix<float, N_HIDDEN, Param::MAX_PARAM> dhidden;
-		Eigen::Matrix<float, Action::MAX_ACTION, N_HIDDEN> dout;
+		//Eigen::Matrix<float, N_HIDDEN, Param::MAX> dhidden;
+		Eigen::Matrix<float, TAction::MAX, N_HIDDEN> dout;
 
 		dout.setZero();
 		dout.row(a) = ahidden;
 		auto dzhidden = zhidden.unaryExpr(&drelu);
-		auto dhidden = out.row(a).transpose().cwiseProduct(dzhidden)*s.edata.transpose();
+		auto dhidden = out.row(a).transpose().cwiseProduct(dzhidden)*s.transpose();
 		dhiddens.push_back(dhidden);
 		douts.push_back(dout);
 		actions.push_back(a);
@@ -157,7 +226,7 @@ struct Model {
 		return { dhiddens[frame], douts[frame] };
 	}
 
-	Action saved_action(int frame) {
+	TAction saved_action(int frame) {
 		return actions[frame];
 	}
 
@@ -165,30 +234,61 @@ struct Model {
 		return actions.size();
 	}
 
-	void descent(std::vector < Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>> grads, float lr) {
+	void descent(const std::vector < Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>> &grads, float lr) {
 		hidden += lr * grads[0];
 		out += lr * grads[1];
+		float alr = fabs(lr);
+		hidden -= alr*hidden;
+		out -= alr*out;
 	}
 
+
 	std::vector< std::vector<float> > params;
-	Eigen::Matrix<float, N_HIDDEN, Param::MAX_PARAM> hidden;
-	Eigen::Matrix<float, Action::MAX_ACTION, N_HIDDEN> out;
+	Eigen::Matrix<float, N_HIDDEN, StateSize> hidden;
+	Eigen::Matrix<float, TAction::MAX, N_HIDDEN> out;
 
 	Eigen::Matrix<float, N_HIDDEN, 1> ahidden;
 	Eigen::Matrix<float, N_HIDDEN, 1> zhidden;
 
-	std::vector<Eigen::Matrix<float, N_HIDDEN, Param::MAX_PARAM>> dhiddens;
-	std::vector<Eigen::Matrix<float, Action::MAX_ACTION, N_HIDDEN>> douts;
-	std::vector<Action> actions;
-	std::vector<State> states;
+	std::vector<Eigen::Matrix<float, N_HIDDEN, StateSize>> dhiddens;
+	std::vector<Eigen::Matrix<float, TAction::MAX, N_HIDDEN>> douts;
+	std::vector<TAction> actions;
+	std::vector<State<StateSize>> states;
 	std::vector<float> probs;
-	bool winner;
-
 };
 
-void saveModel(const Model &m, std::string name);
+using UnitAction = Action<UA>;
+using BuildAction = Action<BA>;
 
-bool loadModel(Model &m, std::string name);
+using UnitModel = Model<UnitAction, static_cast<size_t>(Param::MAX_PARAM)>;
+using BuildModel = Model<BuildAction, static_cast<size_t>(BuildParam::MAX_BUILD)>;
+
+struct BrainHerder {
+	UnitModel umodel;
+	BuildModel bmodel;
+	bool winner;
+
+	void save(const std::string& path) {
+		std::stringstream ss;
+		cereal::BinaryOutputArchive ar{ss};
+		ar(cereal::make_nvp("winner", winner));
+		ar(cereal::make_nvp("umodel", umodel));
+		ar(cereal::make_nvp("bmodel", bmodel));
+		std::ofstream out(path, std::ios_base::binary);
+		auto serial{ ss.str() };
+		out.write(serial.c_str(), serial.length());
+	}
+
+	bool load(const std::string& path) {
+		std::ifstream in(path, std::ios_base::binary);
+		if (in.is_open()) {
+			cereal::BinaryInputArchive ar{ in };
+			ar(winner, umodel, bmodel);
+			return true;
+		}
+		return false;
+	}
+};
 
 #endif // __AI_STRUCTS_H_DEF__
 

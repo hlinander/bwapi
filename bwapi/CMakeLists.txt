@@ -1,6 +1,8 @@
 
 option(USE_OPENBW "Use OpenBW" ON)
 
+#find_package(Torch REQUIRED)
+
 include_directories(include)
 
 if (BUILD_COMPAT)

@@ -1,3 +1,4 @@
+
 include_directories(
   ../include
   ../ExampleAIModule/Source/cereal-1.2.2/include
@@ -11,4 +12,3 @@ add_executable(Overmind
   Overmind.cpp
   ../ExampleAIModule/Source/AIStructs.cpp
   )
-

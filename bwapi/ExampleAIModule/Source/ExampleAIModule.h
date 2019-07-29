@@ -27,7 +27,7 @@ public:
   virtual void onUnitComplete(BWAPI::Unit unit);
   // Everything below this line is safe to modify.
 private:
-	Model model;
+	BrainHerder bh;
 	time_t start_time;
 	bool debug;
 	bool force_lose;
