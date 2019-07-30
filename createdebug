@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 mkdir -p build_debug
 cd build_debug
-cmake .. -DCMAKE_BUILD_TYPE=Debug -DOPENBW_DIR=../../openbw
+cmake .. -DCMAKE_BUILD_TYPE=Debug -DOPENBW_DIR=../../openbw -DCMAKE_PREFIX_PATH=/home/herden/projects/scai/openbw/libtorch/

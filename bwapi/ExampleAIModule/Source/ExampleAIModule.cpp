@@ -44,41 +44,45 @@ static std::string get_resname() {
 
 static BuildState createBuildState() {
 	BuildState bs;
-	bs.setZero();
-	bs(MINERALS) = Broodwar->self()->minerals();
-	bs(GAS) = Broodwar->self()->gas();
-	bs(N_SCVS) = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_SCV);
-	bs(N_MARINES) = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_Marine);
-	bs(N_SUPPLY_DEPOTS) = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_Supply_Depot);
-	bs(N_BARRACKS) = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_Barracks);
+	std::fill(std::begin(bs), std::end(bs), 0.0f);
+	bs[MINERALS] = Broodwar->self()->minerals() / 2000.0;
+	bs[GAS] = Broodwar->self()->gas() / 2000.0;
+	bs[N_SCVS] = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_SCV) / 200.0; 
+	bs[N_MARINES] = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_Marine) / 200.0;
+	bs[N_SUPPLY_DEPOTS] = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_Supply_Depot) / 200.0;
+	bs[N_BARRACKS] = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_Barracks) / 200.0;
 	return bs;
 }
 
 static UnitState createUnitState(Unit me) {
 	UnitState s;
-	s.setZero();
+	std::fill(std::begin(s), std::end(s), 0.0f);
 	for (auto u : Broodwar->enemy()->getUnits()) {
 		if (!u->getType().isBuilding()) {
-			s(Param::ENEMY_COUNT)++;
-			s(Param::ENEMY_HP) += u->getHitPoints();
+			s[Param::ENEMY_COUNT]++;
+			s[Param::ENEMY_HP] += u->getHitPoints();
 		}
 	}
+	s[Param::ENEMY_COUNT] *= (1.0 / 200.0);
+	s[Param::ENEMY_HP] *= (1.0 / 2000.0);
 	for (auto u : Broodwar->self()->getUnits()) {
 		if (!u->getType().isBuilding()) {
-			s(Param::TEAM_COUNT)++;
-			s(Param::TEAM_HP) += u->getHitPoints();
+			s[Param::TEAM_COUNT]++;
+			s[Param::TEAM_HP] += u->getHitPoints();
 		}
 	}
-	s(Param::ME_HP) = static_cast<float>(me->getHitPoints());
+	s[Param::TEAM_COUNT] *= (1.0 / 200.0);
+	s[Param::TEAM_HP] *= (1.0 / 2000.0);
+	s[Param::ME_HP] = static_cast<float>(me->getHitPoints()) / 200.0;
 	auto closest = me->getClosestUnit(IsEnemy && !IsBuilding);
-	s(Param::ENEMY_DISTANCE) = closest ? closest->getPosition().getDistance(me->getPosition()) : 64.0f;
+	s[Param::ENEMY_DISTANCE] = (closest ? closest->getPosition().getDistance(me->getPosition()) : 64.0f) / 3000.0;
 	closest = me->getClosestUnit(!IsEnemy && !IsBuilding);
-	s(Param::TEAM_DISTANCE) = closest ? closest->getPosition().getDistance(me->getPosition()) : 64.0f;
-	s(Param::ME_ATTACKED) = static_cast<float>(me->isUnderAttack());
-	s(Param::ME_REPAIRED) = static_cast<float>(me->isBeingHealed());
-	s(Param::TEAM_MINERALS) = Broodwar->self()->minerals();
-	s(Param::ME_SCV) = static_cast<float>(me->getType() == BWAPI::UnitTypes::Terran_SCV);
-	s(Param::ME_MARINE) = static_cast<float>(me->getType() == BWAPI::UnitTypes::Terran_Marine);
+	s[Param::TEAM_DISTANCE] = (closest ? closest->getPosition().getDistance(me->getPosition()) : 64.0f) / 3000.0;
+	s[Param::ME_ATTACKED] = static_cast<float>(me->isUnderAttack());
+	s[Param::ME_REPAIRED] = static_cast<float>(me->isBeingHealed());
+	s[Param::TEAM_MINERALS] = Broodwar->self()->minerals() / 2000.0;
+	s[Param::ME_SCV] = static_cast<float>(me->getType() == BWAPI::UnitTypes::Terran_SCV);
+	s[Param::ME_MARINE] = static_cast<float>(me->getType() == BWAPI::UnitTypes::Terran_Marine);
 	return s;
 }
 
@@ -173,8 +177,11 @@ static void commitAction(BuildAction a) {
 	else if (a == BuildAction::Type::BUILD_MARINE) {
 		filter(Broodwar->self()->getUnits(), BWAPI::Filter::GetType == BWAPI::UnitTypes::Terran_Barracks, 
 			[](BWAPI::Unit u){
-				u->train(BWAPI::UnitTypes::Terran_Marine);
-				return false;
+				if(!u->isTraining()) {
+					u->train(BWAPI::UnitTypes::Terran_Marine);
+					return false;
+				}
+				return true;
 				});
 	}
 	else if (a == BuildAction::Type::BUILD_SUPPLY) {
@@ -212,7 +219,7 @@ static void commitAction(UnitAction a, Unit me, bool debug) {
 		//	return left->getHitPoints() < right->getHitPoints();
 		//});
 		auto target = me->getClosestUnit(IsEnemy && !IsBuilding);
-		if (target && !me->getType().isWorker()) {
+		if (target) {
 			me->attack(target);
 			Broodwar->drawLineMap(me->getPosition(), target->getPosition(), Color(255, 0, 0));
 		}
@@ -338,15 +345,6 @@ void ExampleAIModule::onFrame()
 {
 	// Called once every game frame
 	++frames;
-	//if (time(NULL) > nexttick) {
-	//	nexttick = time(NULL) + 1;
-	//	std::cout << "ONFRAME: " << frames << " avg bwapifps: " << Broodwar->getAverageFPS() << std::endl;
-	//	frames = 0;
-	//}
-	// Display the game frame rate as text in the upper left area of the screen
-	//Broodwar->drawTextScreen(200, 0,  "FPS: %d", Broodwar->getFPS() );
-	//Broodwar->drawTextScreen(200, 20, "Average FPS: %f", Broodwar->getAverageFPS() );
-	//Broodwar->sendText("Average FPS: %f FPS: %d", Broodwar->getAverageFPS(), Broodwar->getFPS());
 
 	// Return if the game is a replay or is paused
 	if (Broodwar->isReplay() || Broodwar->isPaused() || !Broodwar->self())
@@ -397,111 +395,26 @@ void ExampleAIModule::onFrame()
 		// If the unit is a worker unit
 		if (!u->getType().isBuilding())
 		{
-			// if ( u->isIdle() )
+			if((frames & 1) == 0)
 			{
 				auto s{ createUnitState(u) };
 				auto uaction{ bh.umodel.get_action(s) };
-
 				commitAction(uaction, u, debug);
-
-				// Order workers carrying a resource to return them to the center,
-				// otherwise find a mineral patch to harvest.
-				//if ( u->isCarryingGas() || u->isCarryingMinerals() )
-				//{
-				//  u->returnCargo();
-				//}
-				//else if ( !u->getPowerUp() )  // The worker cannot harvest anything if it
-				//{                             // is carrying a powerup such as a flag
-				//  // Harvest from the nearest mineral patch or gas refinery
-				//  if ( !u->gather( u->getClosestUnit( IsMineralField || IsRefinery )) )
-				//  {
-				//    // If the call fails, then print the last error message
-				//    Broodwar << Broodwar->getLastError() << std::endl;
-				//  }
-
-				//} // closure: has no powerup
 			} // closure: if idle
-
 		}
-		//else if ( u->getType().isResourceDepot() ) // A resource depot is a Command Center, Nexus, or Hatchery
-		//{
-
-		//  // Order the depot to construct more workers! But only when it is idle.
-		//  if ( u->isIdle() && !u->train(u->getType().getRace().getWorker()) )
-		//  {
-		//    // If that fails, draw the error at the location so that you can visibly see what went wrong!
-		//    // However, drawing the error once will only appear for a single frame
-		//    // so create an event that keeps it on the screen for some frames
-		//    Position pos = u->getPosition();
-		//    Error lastErr = Broodwar->getLastError();
-		//    Broodwar->registerEvent([pos,lastErr](Game*){ Broodwar->drawTextMap(pos, "%c%s", Text::White, lastErr.c_str()); },   // action
-		//                            nullptr,    // condition
-		//                            Broodwar->getLatencyFrames());  // frames to run
-
-		//    // Retrieve the supply provider type in the case that we have run out of supplies
-		//    UnitType supplyProviderType = u->getType().getRace().getSupplyProvider();
-		//    static int lastChecked = 0;
-
-		//    // If we are supply blocked and haven't tried constructing more recently
-		//    if (  lastErr == Errors::Insufficient_Supply &&
-		//          lastChecked + 400 < Broodwar->getFrameCount() &&
-		//          Broodwar->self()->incompleteUnitCount(supplyProviderType) == 0 )
-		//    {
-		//      lastChecked = Broodwar->getFrameCount();
-
-		//      // Retrieve a unit that is capable of constructing the supply needed
-		//      Unit supplyBuilder = u->getClosestUnit(  GetType == supplyProviderType.whatBuilds().first &&
-		//                                                (IsIdle || IsGatheringMinerals) &&
-		//                                                IsOwned);
-		//      // If a unit was found
-		//      if ( supplyBuilder )
-		//      {
-		//        if ( supplyProviderType.isBuilding() )
-		//        {
-		//          TilePosition targetBuildLocation = Broodwar->getBuildLocation(supplyProviderType, supplyBuilder->getTilePosition());
-		//          if ( targetBuildLocation )
-		//          {
-		//            // Register an event that draws the target build location
-		//            Broodwar->registerEvent([targetBuildLocation,supplyProviderType](Game*)
-		//                                    {
-		//                                      Broodwar->drawBoxMap( Position(targetBuildLocation),
-		//                                                            Position(targetBuildLocation + supplyProviderType.tileSize()),
-		//                                                            Colors::Blue);
-		//                                    },
-		//                                    nullptr,  // condition
-		//                                    supplyProviderType.buildTime() + 100 );  // frames to run
-
-		//            // Order the builder to construct the supply structure
-		//            supplyBuilder->build( supplyProviderType, targetBuildLocation );
-		//          }
-		//        }
-		//        else
-		//        {
-		//          // Train the supply provider (Overlord) if the provider is not a structure
-		//          supplyBuilder->train( supplyProviderType );
-		//        }
-		//      } // closure: supplyBuilder is valid
-		//    } // closure: insufficient supply
-		//  } // closure: failed to train idle unit
-
-		//}
-
 	} // closure: unit iterator
 
 	if (did_lose) {
-		// Broodwar->sendText("No my workers are gone. Honorable soduku.");
-		//onEnd(false);
-		//Broodwar->sendText("win");
 		Broodwar->leaveGame();
 	}
-	double elapsed = difftime(time(NULL), start_time);
+	// double elapsed = difftime(time(NULL), start_time);
 	// if (debug)
 	// 	std::cout << "@ ELAPSED " << elapsed << std::endl;
-	if (frames == 5900) {
+	if (frames == 9900) {
 		// Broodwar->sendText("timeout");
 		force_lose = true;
 	}
-	else if(frames > 6000) {
+	else if(frames > 10000) {
 		//std::cout << "@@@ Timeout!" << std::endl;
 		//onEnd(false);
 		Broodwar->leaveGame();

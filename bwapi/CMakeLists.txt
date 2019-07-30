@@ -1,7 +1,8 @@
 
 option(USE_OPENBW "Use OpenBW" ON)
-
-#find_package(Torch REQUIRED)
+set_property(GLOBAL PROPERTY FIND_LIBRARY_USE_LIB64_PATHS ON)
+find_package(Torch REQUIRED)
+link_directories(/home/herden/projects/scai/openbw/pytorch/torch/lib64/)
 
 include_directories(include)
 

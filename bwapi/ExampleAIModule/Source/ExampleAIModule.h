@@ -26,8 +26,10 @@ public:
   virtual void onSaveGame(std::string gameName);
   virtual void onUnitComplete(BWAPI::Unit unit);
   // Everything below this line is safe to modify.
+  ExampleAIModule() : bh(0.0f) {}
 private:
 	BrainHerder bh;
+  torch::NoGradGuard no_grad;
 	time_t start_time;
 	bool debug;
 	bool force_lose;

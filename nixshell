@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-nix-shell -p gcc cmake gdb
+nix-shell -p clang_7 cmake python37Packages.pyyaml llvmPackages.openmp

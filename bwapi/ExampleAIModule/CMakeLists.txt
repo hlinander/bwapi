@@ -13,6 +13,6 @@ add_library(ExampleAIModule SHARED
   Source/AIStructs.cpp
   )
 
-#target_link_libraries(ExampleAIModule BWAPILIB "${TORCH_LIBRARIES}")
 target_link_libraries(ExampleAIModule BWAPILIB)
+target_link_libraries(ExampleAIModule "${TORCH_LIBRARIES}")
 set_property(TARGET ExampleAIModule PROPERTY CXX_STANDARD 14)

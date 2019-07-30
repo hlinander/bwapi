@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 mkdir -p build
 cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DOPENBW_DIR=../../openbw -DCMAKE_PREFIX_PATH=/home/herden/projects/scai/openbw/libtorch/
+cmake .. -DCMAKE_BUILD_TYPE=Release -DOPENBW_DIR=../../openbw -DCMAKE_PREFIX_PATH=/home/herden/projects/scai/openbw/pytorch/torch/

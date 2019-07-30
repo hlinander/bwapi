@@ -19,8 +19,11 @@ if (NOT WIN32)
   target_link_libraries(BWAPILauncher dl)
 endif()
 
+
 install(TARGETS BWAPILauncher
   RUNTIME DESTINATION bin
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
 )
+
+set_property(TARGET BWAPILauncher PROPERTY CXX_STANDARD 14)

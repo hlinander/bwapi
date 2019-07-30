@@ -12,3 +12,6 @@ add_executable(Overmind
   Overmind.cpp
   ../ExampleAIModule/Source/AIStructs.cpp
   )
+
+target_link_libraries(Overmind "${TORCH_LIBRARIES}")
+set_property(TARGET Overmind PROPERTY CXX_STANDARD 14)

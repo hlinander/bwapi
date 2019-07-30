@@ -9,9 +9,11 @@
 #include <cereal/archives/binary.hpp>
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
+#include <cereal/types/array.hpp>
 #include <cereal/types/list.hpp>
 #include "EigenCereal.h"
 #include <Eigen/Dense>
+#include <torch/torch.h>
 
 enum Param {
 	TEAM_HP = 0,
@@ -132,8 +134,9 @@ struct Action {
 
 const int N_HIDDEN = 10;
 
+// using State = Eigen::Matrix<float, N, 1>;
 template<size_t N>
-using State = Eigen::Matrix<float, N, 1>;
+using State = std::array<float, N>;
 using UnitState = State<static_cast<size_t>(Param::MAX_PARAM)>;
 using BuildState = State<static_cast<size_t>(BuildParam::MAX_BUILD)>;
 //template<int rows, int cols>
@@ -149,81 +152,89 @@ float drelu(const float x);
 Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> softmax(Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> in);
 
 template<typename TAction, size_t StateSize>
+struct Net : torch::nn::Module {
+	Net() {
+		fc1 = register_module("fc1", torch::nn::Linear(StateSize, N_HIDDEN));
+		fc2 = register_module("fc2", torch::nn::Linear(N_HIDDEN, TAction::MAX));
+		torch::nn::init::xavier_normal_(fc1->weight);
+		torch::nn::init::xavier_normal_(fc2->weight);
+	}
+
+	torch::Tensor forward(torch::Tensor x) {
+		x = torch::relu(fc1->forward(x.reshape({1, StateSize})));
+		x = fc2->forward(x);
+		return x;
+	}
+
+	torch::nn::Linear fc1{nullptr}, fc2{nullptr};
+};
+
+template<typename TAction, size_t StateSize>
 struct Model {
 	typedef State<StateSize> StateType;
-	Model()
+	typedef Net<TAction, StateSize> NetType;
+	Model(float lr) : net{std::make_shared<NetType>()}, optimizer(net->parameters(), lr)
 	{
-		params.resize(TAction::MAX);
-		for (auto &ref : params) {
-			ref.resize(StateSize);
-		}
-		hidden.setRandom();
-		out.setRandom();
 	}
 
 	friend std::ostream & operator<<(std::ostream &os, const Model &m) {
 		os << "Model took " << m.actions.size() << " actions " << std::endl;
-		os << "Hidden:" << std::endl << m.hidden << std::endl;
-		os << "Output:" << std::endl << m.out << std::endl;
+		m.net->pretty_print(os);
+		std::cout << m.net->parameters() << std::endl;
 		return os;
 	}
 
 	template <class Archive>
-	void serialize(Archive &a)
+	void save(Archive &a) const
 	{
-		a(cereal::make_nvp("params", params));
-		a(cereal::make_nvp("hidden", hidden));
-		a(cereal::make_nvp("out", out));
-		a(cereal::make_nvp("dhiddens", dhiddens));
-		a(cereal::make_nvp("douts", douts));
 		a(cereal::make_nvp("actions", actions));
 		a(cereal::make_nvp("states", states));
 		a(cereal::make_nvp("probs", probs));
+		std::stringstream ss;
+		torch::save(net, ss);
+		a(cereal::make_nvp("net", ss.str()));
+		std::stringstream sso;
+		torch::save(optimizer, sso);
+		a(cereal::make_nvp("opt", sso.str()));
 	}
 
-	Eigen::Matrix<float, TAction::MAX, 1> forward(const StateType &s) {
-		//std::cout << "State: " << s.edata << std::endl;
-		//std::cout << 
-		zhidden = hidden * s;
-		ahidden = zhidden.unaryExpr(&relu);
-		return out * ahidden;
+	template <class Archive>
+	void load(Archive &a)
+	{
+		a(cereal::make_nvp("actions", actions));
+		a(cereal::make_nvp("states", states));
+		a(cereal::make_nvp("probs", probs));
+		std::string s;
+		a(s);
+		std::stringstream ss{s};
+		torch::load(net, ss);		
+		std::string so;
+		a(so);
+		std::stringstream sso{so};
+		torch::load(optimizer, sso);		
 	}
 
-	TAction get_action(const StateType &s) {
-		auto logp{forward(s)};
-		auto distribution = softmax(logp);
+	torch::Tensor forward(StateType &s) {
+		auto ts = torch::from_blob(static_cast<void*>(s.data()), {1, StateSize}, torch::kFloat32);
+		return net->forward(ts);
+	}
+
+	TAction get_action(StateType &s) {
+		torch::Tensor out = torch::softmax(forward(s), -1);
+		auto out_a = out.accessor<float,2>();
 		float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
 		float v = 0;
 		TAction action;
 		for (; action != TAction::MAX; ++action) {
-			v += distribution(static_cast<int>(action));
+			v += out_a[0][static_cast<int>(action)];
 			if (r <= v || action == TAction::MAX - 1) {
-				probs.push_back(distribution(static_cast<int>(action)));
+				probs.push_back(out_a[0][static_cast<int>(action)]);
 				break;
 			}
 		}
-		grads(s, action);
-		return action;
-	}
-
-	std::vector<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>> grads(const StateType &s, const TAction a) {
-		// DlogpDout = DlogpDzout * DzoutDout = dlogp * ahidden
-		//Eigen::Matrix<float, N_HIDDEN, Param::MAX> dhidden;
-		Eigen::Matrix<float, TAction::MAX, N_HIDDEN> dout;
-
-		dout.setZero();
-		dout.row(a) = ahidden;
-		auto dzhidden = zhidden.unaryExpr(&drelu);
-		auto dhidden = out.row(a).transpose().cwiseProduct(dzhidden)*s.transpose();
-		dhiddens.push_back(dhidden);
-		douts.push_back(dout);
-		actions.push_back(a);
+		actions.push_back(action);
 		states.push_back(s);
-		return { dhidden, dout };
-	}
-
-	std::vector<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>> saved_grads(int frame) {
-		return { dhiddens[frame], douts[frame] };
+		return action;
 	}
 
 	TAction saved_action(int frame) {
@@ -234,26 +245,11 @@ struct Model {
 		return actions.size();
 	}
 
-	void descent(const std::vector < Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>> &grads, float lr) {
-		hidden += lr * grads[0];
-		out += lr * grads[1];
-		float alr = fabs(lr);
-		hidden -= alr*hidden;
-		out -= alr*out;
-	}
-
-
-	std::vector< std::vector<float> > params;
-	Eigen::Matrix<float, N_HIDDEN, StateSize> hidden;
-	Eigen::Matrix<float, TAction::MAX, N_HIDDEN> out;
-
-	Eigen::Matrix<float, N_HIDDEN, 1> ahidden;
-	Eigen::Matrix<float, N_HIDDEN, 1> zhidden;
-
-	std::vector<Eigen::Matrix<float, N_HIDDEN, StateSize>> dhiddens;
-	std::vector<Eigen::Matrix<float, TAction::MAX, N_HIDDEN>> douts;
+	// Net<TAction, StateSize> net;
+	std::shared_ptr<NetType> net;
+	torch::optim::Adam optimizer;
 	std::vector<TAction> actions;
-	std::vector<State<StateSize>> states;
+	std::vector<StateType> states;
 	std::vector<float> probs;
 };
 
@@ -267,6 +263,10 @@ struct BrainHerder {
 	UnitModel umodel;
 	BuildModel bmodel;
 	bool winner;
+	float avg_ureward;
+	float avg_breward;
+
+	BrainHerder(float lr) : umodel(lr), bmodel(lr), winner{false}, avg_ureward{0}, avg_breward{0} {}
 
 	void save(const std::string& path) {
 		std::stringstream ss;
@@ -274,6 +274,8 @@ struct BrainHerder {
 		ar(cereal::make_nvp("winner", winner));
 		ar(cereal::make_nvp("umodel", umodel));
 		ar(cereal::make_nvp("bmodel", bmodel));
+		ar(cereal::make_nvp("avg_ureward", avg_ureward));
+		ar(cereal::make_nvp("avg_breward", avg_breward));
 		std::ofstream out(path, std::ios_base::binary);
 		auto serial{ ss.str() };
 		out.write(serial.c_str(), serial.length());
@@ -283,7 +285,7 @@ struct BrainHerder {
 		std::ifstream in(path, std::ios_base::binary);
 		if (in.is_open()) {
 			cereal::BinaryInputArchive ar{ in };
-			ar(winner, umodel, bmodel);
+			ar(winner, umodel, bmodel, avg_ureward, avg_breward);
 			return true;
 		}
 		return false;

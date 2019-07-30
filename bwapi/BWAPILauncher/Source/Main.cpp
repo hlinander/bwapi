@@ -6,7 +6,7 @@
 
 int main() {
 
-  BW::sacrificeThreadForUI([]{
+  //BW::sacrificeThreadForUI([]{
     try {
       BW::GameOwner gameOwner;
 
@@ -42,7 +42,7 @@ int main() {
       printf("Error: %s\n", e.what());
       return 1;
     }
-  });
+  // });
 
   return 0;
 }
