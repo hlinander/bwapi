@@ -15,6 +15,8 @@
 #include <Eigen/Dense>
 #include <torch/torch.h>
 
+#define CASEPRINT(x) case x: return #x
+
 enum Param {
 	TEAM_HP = 0,
 	TEAM_COUNT,
@@ -41,20 +43,38 @@ enum BuildParam {
 	MAX_BUILD
 };
 
+static const char* build_param_to_string(BuildParam b) {
+	switch(b) {
+		CASEPRINT(MINERALS);
+		CASEPRINT(GAS);
+		CASEPRINT(N_SCVS);
+		CASEPRINT(N_MARINES);
+		CASEPRINT(N_SUPPLY_DEPOTS);
+		CASEPRINT(N_BARRACKS);
+	}
+	return "BA::Unknown";
+}
+
 const std::map<Param, const char*> ParamS = {
-	{ Param::TEAM_HP, "TEAM_HP"},
-	{ Param::TEAM_COUNT, "TEAM_COUNT" },
-	{ Param::TEAM_DISTANCE, "TEAM_DISTANCE" },
-	{ Param::TEAM_MINERALS, "TEAM_MINERALS" },
-	{ Param::ENEMY_DISTANCE, "ENEMY_DISTANCE" },
-	{ Param::ENEMY_COUNT, "ENEMY_COUNT" },
-	{ Param::ENEMY_HP, "ENEMY_HP" },
-	{ Param::ME_HP, "ME_HP" },
-	{ Param::ME_ATTACKED, "ME_ATTACKED" },
-	{ Param::ME_REPAIRED, "ME_REPAIRED" },
-	{ Param::ME_SCV, "ME_SCV" },
-	{ Param::ME_MARINE, "ME_MARINE" }
 };
+
+static const char* param_to_string(Param p) {
+	switch(p) {
+		CASEPRINT(Param::TEAM_HP);
+		CASEPRINT(Param::TEAM_COUNT);
+		CASEPRINT(Param::TEAM_DISTANCE);
+		CASEPRINT(Param::TEAM_MINERALS);
+		CASEPRINT(Param::ENEMY_DISTANCE);
+		CASEPRINT(Param::ENEMY_COUNT);
+		CASEPRINT(Param::ENEMY_HP);
+		CASEPRINT(Param::ME_HP);
+		CASEPRINT(Param::ME_ATTACKED);
+		CASEPRINT(Param::ME_REPAIRED);
+		CASEPRINT(Param::ME_SCV);
+		CASEPRINT(Param::ME_MARINE);
+	}
+	return "BA::Unknown";
+}
 
 enum class BA {
 	BUILD_SCV = 0,
@@ -154,6 +174,7 @@ Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> softmax(Eigen::Matrix<float
 template<typename TAction, size_t StateSize>
 struct Net : torch::nn::Module {
 	Net() {
+		bn = register_module("bn", torch::nn::BatchNorm(StateSize));
 		fc1 = register_module("fc1", torch::nn::Linear(StateSize, N_HIDDEN));
 		fc2 = register_module("fc2", torch::nn::Linear(N_HIDDEN, TAction::MAX));
 		torch::nn::init::xavier_normal_(fc1->weight);
@@ -161,11 +182,17 @@ struct Net : torch::nn::Module {
 	}
 
 	torch::Tensor forward(torch::Tensor x) {
-		x = torch::relu(fc1->forward(x.reshape({1, StateSize})));
+		// std::cout << "x: " << torch::mean(x) << std::endl;
+		// std::cout << "stdx: " << torch::std(x) << std::endl;
+		x = bn->forward(x);
+		// std::cout << "bn: " << torch::mean(x) << std::endl;
+		// std::cout << "bnstdx: " << torch::std(x) << std::endl;
+		x = torch::leaky_relu(fc1->forward(x));
 		x = fc2->forward(x);
 		return x;
 	}
 
+	torch::nn::BatchNorm bn{nullptr};
 	torch::nn::Linear fc1{nullptr}, fc2{nullptr};
 };
 
@@ -190,6 +217,7 @@ struct Model {
 		a(cereal::make_nvp("actions", actions));
 		a(cereal::make_nvp("states", states));
 		a(cereal::make_nvp("probs", probs));
+		a(cereal::make_nvp("avg_rewards", avg_rewards));
 		std::stringstream ss;
 		torch::save(net, ss);
 		a(cereal::make_nvp("net", ss.str()));
@@ -204,6 +232,7 @@ struct Model {
 		a(cereal::make_nvp("actions", actions));
 		a(cereal::make_nvp("states", states));
 		a(cereal::make_nvp("probs", probs));
+		a(cereal::make_nvp("avg_rewards", avg_rewards));
 		std::string s;
 		a(s);
 		std::stringstream ss{s};
@@ -216,6 +245,17 @@ struct Model {
 
 	torch::Tensor forward(StateType &s) {
 		auto ts = torch::from_blob(static_cast<void*>(s.data()), {1, StateSize}, torch::kFloat32);
+		return net->forward(ts);
+	}
+
+	torch::Tensor forward_batch(std::vector<StateType> &s) {
+		std::vector<float> data;
+		data.reserve(s.size() * StateSize);
+		for(int i = 0; i < s.size(); ++i) {
+			std::copy(s[i].begin(), s[i].end(), &data[i * StateSize]);
+		}
+		auto ts = torch::from_blob(static_cast<void*>(data.data()), 
+								   {static_cast<long>(s.size()), StateSize}, torch::kFloat32);
 		return net->forward(ts);
 	}
 
@@ -251,6 +291,7 @@ struct Model {
 	std::vector<TAction> actions;
 	std::vector<StateType> states;
 	std::vector<float> probs;
+	std::vector<float> avg_rewards;
 };
 
 using UnitAction = Action<UA>;

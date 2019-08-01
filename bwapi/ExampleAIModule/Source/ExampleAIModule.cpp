@@ -219,7 +219,7 @@ static void commitAction(UnitAction a, Unit me, bool debug) {
 		//	return left->getHitPoints() < right->getHitPoints();
 		//});
 		auto target = me->getClosestUnit(IsEnemy && !IsBuilding);
-		if (target) {
+		if (target && !me->getType().isWorker()) {
 			me->attack(target);
 			Broodwar->drawLineMap(me->getPosition(), target->getPosition(), Color(255, 0, 0));
 		}
@@ -279,6 +279,8 @@ void ExampleAIModule::onStart()
 	if (!bh.load(get_dbname())) {
 		Broodwar->sendText("My pants are on my head!");
 	}
+	bh.umodel.net->eval();
+	bh.bmodel.net->eval();
 	// Hello World!
 	// Broodwar->sendText("Hello world!");
 
@@ -395,7 +397,7 @@ void ExampleAIModule::onFrame()
 		// If the unit is a worker unit
 		if (!u->getType().isBuilding())
 		{
-			if((frames & 1) == 0)
+			if((frames % 4) == 0)
 			{
 				auto s{ createUnitState(u) };
 				auto uaction{ bh.umodel.get_action(s) };

@@ -31,4 +31,3 @@ Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> softmax(Eigen::Matrix<float
 	}
 	return out;
 }
-
