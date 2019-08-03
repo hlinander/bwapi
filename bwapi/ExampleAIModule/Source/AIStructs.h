@@ -179,15 +179,17 @@ struct Net : torch::nn::Module {
 		fc2 = register_module("fc2", torch::nn::Linear(N_HIDDEN, TAction::MAX));
 		torch::nn::init::xavier_normal_(fc1->weight);
 		torch::nn::init::xavier_normal_(fc2->weight);
+		torch::nn::init::zeros_(fc2->bias);
+		torch::nn::init::zeros_(fc1->bias);
 	}
 
 	torch::Tensor forward(torch::Tensor x) {
 		// std::cout << "x: " << torch::mean(x) << std::endl;
 		// std::cout << "stdx: " << torch::std(x) << std::endl;
-		x = bn->forward(x);
+		// x = bn->forward(x);
 		// std::cout << "bn: " << torch::mean(x) << std::endl;
 		// std::cout << "bnstdx: " << torch::std(x) << std::endl;
-		x = torch::leaky_relu(fc1->forward(x));
+		x = torch::relu(fc1->forward(x));
 		x = fc2->forward(x);
 		return x;
 	}
@@ -196,7 +198,7 @@ struct Net : torch::nn::Module {
 	torch::nn::Linear fc1{nullptr}, fc2{nullptr};
 };
 
-template<typename TAction, size_t StateSize>
+template<typename TAction, size_t StateSize, size_t BatchSize>
 struct Model {
 	typedef State<StateSize> StateType;
 	typedef Net<TAction, StateSize> NetType;
@@ -209,6 +211,10 @@ struct Model {
 		m.net->pretty_print(os);
 		std::cout << m.net->parameters() << std::endl;
 		return os;
+	}
+
+	void init_grad() {
+
 	}
 
 	template <class Archive>
@@ -249,13 +255,19 @@ struct Model {
 	}
 
 	torch::Tensor forward_batch(std::vector<StateType> &s) {
-		std::vector<float> data;
-		data.reserve(s.size() * StateSize);
-		for(int i = 0; i < s.size(); ++i) {
-			std::copy(s[i].begin(), s[i].end(), &data[i * StateSize]);
+		// std::vector<float> data;
+		// data.reserve(s.size() * StateSize);
+		for(int i = 0; i < BatchSize; ++i) {
+			std::copy(s[i].begin(), s[i].end(), &batch_data[i * StateSize]);
 		}
-		auto ts = torch::from_blob(static_cast<void*>(data.data()), 
-								   {static_cast<long>(s.size()), StateSize}, torch::kFloat32);
+		// for(int i = 0; i < BatchSize; ++i) {
+		// for(int j = 0; j < StateSize; ++j) {
+		// 	std::cout << batch_data[i * StateSize + j] << "|";
+		// }
+		// std::cout << std::endl;
+		// }
+		auto ts = torch::from_blob(static_cast<void*>(batch_data.data()), 
+								   {static_cast<long>(BatchSize), StateSize}, torch::kFloat32);
 		return net->forward(ts);
 	}
 
@@ -287,7 +299,8 @@ struct Model {
 
 	// Net<TAction, StateSize> net;
 	std::shared_ptr<NetType> net;
-	torch::optim::Adam optimizer;
+	torch::optim::SGD optimizer;
+	std::array<float, BatchSize * StateSize> batch_data;
 	std::vector<TAction> actions;
 	std::vector<StateType> states;
 	std::vector<float> probs;
@@ -297,12 +310,15 @@ struct Model {
 using UnitAction = Action<UA>;
 using BuildAction = Action<BA>;
 
-using UnitModel = Model<UnitAction, static_cast<size_t>(Param::MAX_PARAM)>;
-using BuildModel = Model<BuildAction, static_cast<size_t>(BuildParam::MAX_BUILD)>;
+template<size_t BatchSize>
+using UnitModel = Model<UnitAction, static_cast<size_t>(Param::MAX_PARAM), BatchSize>;
+template<size_t BatchSize>
+using BuildModel = Model<BuildAction, static_cast<size_t>(BuildParam::MAX_BUILD), BatchSize>;
 
+template<size_t BatchSize>
 struct BrainHerder {
-	UnitModel umodel;
-	BuildModel bmodel;
+	UnitModel<BatchSize> umodel;
+	BuildModel<BatchSize> bmodel;
 	bool winner;
 	float avg_ureward;
 	float avg_breward;

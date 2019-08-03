@@ -28,7 +28,7 @@ public:
   // Everything below this line is safe to modify.
   ExampleAIModule() : bh(0.0f) {}
 private:
-	BrainHerder bh;
+	BrainHerder<1> bh;
   torch::NoGradGuard no_grad;
 	time_t start_time;
 	bool debug;
