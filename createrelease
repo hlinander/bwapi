@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
 mkdir -p build
 cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DOPENBW_DIR=../../openbw -DCMAKE_PREFIX_PATH=/home/herden/projects/scai/openbw/pytorch/torch/
+export CC=clang
+export CXX=clang++
+cmake .. -DCMAKE_BUILD_TYPE=Release -DOPENBW_DIR=../../openbw -DCMAKE_PREFIX_PATH=/home/herden/projects/scai/openbw/pytorch/torch/ -DCMAKE_EXPORT_COMPILE_COMMANDS=YES

@@ -2,14 +2,15 @@
 //
 
 #include <unordered_map>
+#include <algorithm>
 #include <iostream>
 #include <chrono>
 #include <ctime>
 #include "AIStructs.h"
 //#include <torch/torch.h>
 
-const float LR = 0.00001;//0.00000001;
-const size_t BATCH_SIZE = 20;
+const float LR = 0.001;//0.00000001;
+const int BATCH_SIZE = 30;
 
 using stat_map = std::unordered_map<std::string, size_t>;
 using state_reward_map = std::unordered_map<size_t, float>;
@@ -20,6 +21,16 @@ state_reward_map b_reward_map = {{BuildParam::MINERALS, 1.0}};
 void torch_tests();
 void test_batch();
 void test_load_save();
+void test_grad();
+
+template<size_t N>
+void print_state(std::array<float, N> &state) {
+	std::cout << "[";
+	for(auto &e: state) {
+		std::cout << e << ", " << std::endl;
+	}
+	std::cout << "]" << std::endl;
+}
 
 void generate_plot(std::string path, BrainHerder<BATCH_SIZE> &bh) {
 	std::ofstream outfile;
@@ -43,36 +54,88 @@ struct Reward {
 	float total_reward;
 };
 
+std::vector<float> normalize_rewards(std::vector<float>& rewards) {
+	std::vector<float> normalized_rewards(rewards);
+
+	double sum = std::accumulate(rewards.begin(), rewards.end(), 0.0);
+	double mean = sum / rewards.size();
+
+	double sq_sum = std::inner_product(rewards.begin(), rewards.end(), rewards.begin(), 0.0);
+	double stddev = std::sqrt(sq_sum / rewards.size() - mean * mean);
+	
+	if(stddev > 0.0f) {
+		std::transform(normalized_rewards.begin(), normalized_rewards.end(), normalized_rewards.begin(),
+					[mean, stddev](float r) -> float { return (r) / stddev; });
+	} 
+	return normalized_rewards;
+}
+
 template<typename T, size_t N, size_t BS>
-Reward calculate_rewards(Model<T, N, BS> &experience, state_reward_map &sr) {
+Reward calculate_rewards(int winner, Model<T, N, BS> &experience, state_reward_map &sr) {
+	DEBUG("Calculating rewards\n");
 	Reward ret;
-	ret.rewards.reserve(experience.get_frames());
+	ret.rewards.resize(experience.get_frames());
 	std::fill(std::begin(ret.rewards), std::end(ret.rewards), 0.0f);
 	ret.total_reward = 0.0;
-	float reward = 0.0;//win_reward;
+	float reward = winner * 10.0f;
 	for (int frame = experience.get_frames() - 1; frame >= 1; --frame) {
+		reward += experience.immidiate_rewards[frame];
 		for(auto& reward_pair: sr) {
-			reward += reward_pair.second * (experience.states[frame][reward_pair.first]) - reward_pair.second * (experience.states[frame - 1][reward_pair.first]);
+			float diff = experience.states[frame][reward_pair.first] - experience.states[frame - 1][reward_pair.first];
+			if(diff > 0) {
+				reward += reward_pair.second * diff;
+			}
 			// reward += reward_pair.second * (experience.states[frame][reward_pair.first]);
 		}
 		reward *= 0.99;
-		ret.total_reward += reward;
 		ret.rewards[frame] = reward;
 	}
+	ret.total_reward = std::accumulate(ret.rewards.begin(), ret.rewards.end(), 0.0f);
+	ret.rewards = normalize_rewards(ret.rewards);
 	return ret;
 }
 
 template<typename T, size_t N, size_t BS>
-float update_model(bool winner, Model<T, N, BS> &m, Model<T, N, BS> &experience, stat_map &stats, state_reward_map &sr, const float avg_reward, bool debug) {
-	float win_reward = winner ? (fabs(avg_reward) + 10) : (-fabs(avg_reward) - 1);
+void debug_models(bool winner, Model<T, N, BS> &prev, Model<T, N, BS> &next) {
+	prev.net->eval();
+	prev.net->eval();
+	next.net->eval();
+	next.net->eval();
+	stat_map ustats;
+	stat_map bstats;
+	Reward reward = calculate_rewards(winner, prev, u_reward_map);
+	std::cout << "reward[0]: " << reward.rewards[0] << std::endl;
+	for(int frame = 0; frame < prev.get_frames(); ++frame) {
+		print_state(prev.states[frame]);
+		auto p = torch::softmax(prev.forward(prev.states[frame]), -1);
+		auto pnext = torch::softmax(next.forward(prev.states[frame]), -1);
+		auto action = prev.actions[frame];
+		float r = pnext[0][action].template item<float>() / p[0][action].template item<float>();
+		auto rs = pnext[0] / p[0];
+		float creward = reward.rewards[frame];
+		float adv = reward.rewards[frame];// - prev.avg_ureward;
+		std::cout << "rs: " << rs << std::endl;
+		// std::cout << "pnext: " << pnext << std::endl;
+		std::cout << action.name() << " @ " << p[0][action].template item<float>() << " reward: " << creward << " adv: " << adv  << " r: " << r << std::endl;
+		std::cout << prev.states[frame][Param::TEAM_MINERALS] * 2000.0 << std::endl;
+
+	}
+}
+
+
+template<typename T, size_t N, size_t BS>
+float update_model(int winner, Model<T, N, BS> &m, Model<T, N, BS> &experience, stat_map &stats, state_reward_map &sr, const float avg_reward, bool debug) {
 	torch::Tensor loss = torch::tensor({0.0f});
-	Reward reward = calculate_rewards(experience, sr);
+	Reward reward = calculate_rewards(winner, experience, sr);
 
 	for (int frame = experience.get_frames() - 1; frame >= 1; --frame) {
 		stats[experience.actions[frame].name()]++;
 	}
-
+	int steps = 0;
+	DEBUG("Update with batches...\n");
+	DEBUG("Frames: %d, Batchsize: %d\n", experience.get_frames(), BATCH_SIZE);
 	for (int frame = experience.get_frames() - 1; frame >= BATCH_SIZE; frame-=BATCH_SIZE) {
+		DEBUG("Frame %d\n", frame);
 		// float adv = (reward - avg_reward);
 		// float adv = (rewards[frame]);
 		auto batch = std::vector<State<N>>(&(experience.states[frame - BATCH_SIZE]), &(experience.states[frame]));
@@ -85,14 +148,34 @@ float update_model(bool winner, Model<T, N, BS> &m, Model<T, N, BS> &experience,
 
 		for(int i = 0; i < BATCH_SIZE; ++i) {
 			// float adv = (batch_rewards[i] - avg_reward);
-			float adv = batch_rewards[i];
-			auto r = p[i][experience.actions[frame]] / old_p[i][experience.actions[frame]];
-			// auto re = adv * p[i][experience.actions[frame]].log();
-			// loss += r;
+			float adv = (batch_rewards[i]);
+			// float adv = batch_rewards[i];
+			auto r = p[i][batch_actions[i]] / old_p[i][batch_actions[i]];
+			//auto r = adv * p[i][experience.actions[frame]].log();
+			//auto r = -adv * p[i][static_cast<int>(UA::MINE)].log();
+			//loss += r;
 			loss += torch::min(r * adv, torch::clamp(r, 1 - 0.2, 1 + 0.2) * adv);
+			// p[i][static_cast<int>(UA::MINE)].log().backward();
 		}
+		// std::cout <<static_cast<int>(UA::MINE) << std::endl;
+		// m.optimizer.options.beta1(1.0f);
+		// m.optimizer.options.beta2(1.0f);
+		// m.optimizer.zero_grad();
+		// torch::optim::SGD topt(m.net->parameters(), 0.1);
+		// topt.zero_grad();
+		// (p[1][static_cast<int>(UA::MINE)]).backward();
+		//  topt.step();
+		// m.optimizer.step();
+		// auto pnew = torch::softmax(m.forward_batch(batch), -1);
+		// std::cout << "Frame " << frame << std::endl;
+		// std::cout << (pnew / p)[0]  << std::endl;
+		// if(steps > 20)
+		// 	exit(0);
+		// steps++;
 	}
-	loss.backward();
+	DEBUG("Loss backwards\n");
+	(-loss).backward();
+	DEBUG("Returning...\n");
 	if(debug) {
 		// for (int frame = experience.get_frames() - 1; frame >= 1; --frame) {
 		// 	int action = experience.actions[frame];
@@ -104,6 +187,7 @@ float update_model(bool winner, Model<T, N, BS> &m, Model<T, N, BS> &experience,
 	}
 	return reward.total_reward;
 }
+
 
 int main(int argc, char* argv[])
 {
@@ -133,25 +217,19 @@ int main(int argc, char* argv[])
 		//saveModel(m, argv[2]);
 		test_load_save();
 	}
+	else if (std::string(argv[1]) == "-gradtest") {
+		//saveModel(m, argv[2]);
+		test_grad();
+	}
 	else if (std::string(argv[1]) == "-debug") {
 		BrainHerder<1> prev(0.0f);
 		BrainHerder<1> next(0.0f);
-		stat_map ustats;
-		stat_map bstats;
 		prev.load(argv[2]);
 		next.load(argv[3]);
-		Reward reward = calculate_rewards(prev.umodel, u_reward_map);
-		for(int frame = 0; frame < prev.umodel.get_frames(); ++frame) {
-			auto p = torch::softmax(prev.umodel.forward(prev.umodel.states[frame]), -1);
-			auto pnext = torch::softmax(next.umodel.forward(prev.umodel.states[frame]), -1);
-			auto action = prev.umodel.actions[frame];
-			float r = pnext[0][action].item<float>() / p[0][action].item<float>();
-			float creward = reward.rewards[frame];
-			float adv = reward.rewards[frame] - prev.avg_ureward;
-			std::cout << action.name() << " @ " << p[0][action].item<float>() << " reward: " << creward << " adv: " << adv  << " r: " << r << std::endl;
-			std::cout << prev.umodel.states[frame][Param::TEAM_MINERALS] * 2000.0 << std::endl;
-
-		}
+		std::cout << "Unit models" << std::endl;
+		debug_models(prev.winner, prev.umodel, next.umodel);
+		std::cout << "Build models" << std::endl;
+		debug_models(prev.winner, prev.bmodel, next.bmodel);
 		// bh.umodel.optimizer.zero_grad();
 		// bh.bmodel.optimizer.zero_grad();
 		// std::cout << bh.umodel.net->parameters()[2].grad() << std::endl;
@@ -165,7 +243,7 @@ int main(int argc, char* argv[])
 		std::cout << "Showing " << argv[2] << std::endl;
 		// loadModel(m, argv[2]);
 		bh.load(argv[2]);
-		std::cout << (bh.winner ? "WINNER" : "LOSER") << std::endl;
+		std::cout << (bh.winner == 1 ? "WINNER" : "LOSER") << std::endl;
 		std::cout << bh.umodel << std::endl;
 	}
 	else if (std::string(argv[1]) == "-update") {
@@ -187,7 +265,7 @@ int main(int argc, char* argv[])
 		std::string high_game;
 		std::cout << (bh.umodel.net->is_training() ? "TRAINING" : "EVALUATING") << std::endl;
 		std::cout << "LR: " << bh.umodel.optimizer.options.learning_rate() << std::endl;
-		for(int epoch = 0; epoch < 6; epoch++) {
+		for(int epoch = 0; epoch < 5; epoch++) {
 			bh.umodel.optimizer.zero_grad();
 			bh.bmodel.optimizer.zero_grad();
 			std::ifstream infile(argv[3]);
@@ -195,21 +273,30 @@ int main(int argc, char* argv[])
 				BrainHerder<BATCH_SIZE> c(0.0f);
 				c.load(line);
 				total++;
-				if(c.winner)
+				if(c.winner == 1)
 					winners++;
 				total_uframes += c.umodel.get_frames();
 				total_bframes += c.bmodel.get_frames();
+				DEBUG("Update unit model\n");
 				float ureward = update_model(c.winner, bh.umodel, c.umodel, ustats, u_reward_map, bh.avg_ureward, false);
+				DEBUG("Update build model\n");
 				float breward = update_model(c.winner, bh.bmodel, c.bmodel, bstats, b_reward_map, bh.avg_breward, false);
 				// if(ureward != breward) {
 				// 	std::cout << "REWARD IS NOT THE SAME" << std::endl;
 				// }
 				total_ureward += ureward;
 				total_breward += breward;
-				float avg_game_ureward = ureward / c.umodel.get_frames();
-				float avg_game_breward = breward / c.bmodel.get_frames();
-				if(avg_game_ureward + avg_game_breward > high_reward) {
-					high_reward = avg_game_ureward + avg_game_breward;
+				float avg_game_reward = 0.0f;
+				if(c.umodel.get_frames() > 0) {
+					float avg_game_ureward = ureward / c.umodel.get_frames();
+					avg_game_reward += avg_game_ureward;
+				}
+				if(c.bmodel.get_frames() > 0) {
+					float avg_game_breward = breward / c.bmodel.get_frames();
+					avg_game_reward += avg_game_breward;
+				}
+				if(avg_game_reward > high_reward) {
+					high_reward = avg_game_reward;
 					high_game = line;
 				}
 				std::cout << "#" << std::flush;	
@@ -219,8 +306,12 @@ int main(int argc, char* argv[])
 		}
 
 		// saveModel(m, std::string(argv[4]));
-		bh.avg_ureward = total_ureward / total_uframes;
-		bh.avg_breward = total_breward / total_bframes;
+		if(total_uframes > 0) {
+			bh.avg_ureward = total_ureward / total_uframes;
+		}
+		if(total_bframes > 0) {
+			bh.avg_breward = total_breward / total_bframes;
+		}
 		bh.umodel.avg_rewards.push_back(bh.avg_ureward);
 		bh.bmodel.avg_rewards.push_back(bh.avg_breward);
 		bh.save(argv[4]);
@@ -317,7 +408,7 @@ void test_batch() {
 	std::vector<float> data;
 	const size_t N = 3;
 	{
-	data.reserve(N * Param::MAX_PARAM);
+	data.resize(N * Param::MAX_PARAM);
 	for(int i = 0; i < N; ++i) {
 		std::fill(&data[i * Param::MAX_PARAM], &data[i * Param::MAX_PARAM + Param::MAX_PARAM], 1.0);
 		//std::copy(s[i].begin(), s[i].end(), &data[i * Param::MAX_PARAM]);
@@ -338,4 +429,16 @@ void test_batch() {
 	loss = out[0][0];
 	loss.backward();
 	std::cout << bh.umodel.net->parameters()[2].grad() << std::endl;
+}
+
+void test_grad() {
+	TestNet model1;
+	auto opt1 = torch::optim::SGD(model1.parameters(), 0.01);
+	torch::Tensor data = torch::randn({10, 2});
+	auto out1 = model1.forward(data);
+	(-out1[0][0]).backward();
+	opt1.step();
+	auto out2 = model1.forward(data);
+	std::cout << out2[0][0] / out1[0][0] << std::endl;
+
 }

@@ -5,8 +5,7 @@
 #include <iostream>
 #include <fstream>
 
-#define DEBUG(...) printf(__VA_ARGS__)
-
+#define MAX_FRAMES 3000
 
 using namespace BWAPI;
 using namespace Filter;
@@ -166,19 +165,34 @@ bool filter(BWAPI::Unitset us, const BWAPI::UnitFilter &pred, T cb) {
 	return true;
 }
 
-static void commitAction(BuildAction a) {
+bool requirements(BWAPI::UnitType t) {
+	if(Broodwar->self()->minerals() > t.mineralPrice() && 
+	   Broodwar->self()->supplyTotal() - Broodwar->self()->supplyUsed() > t.supplyRequired()) {
+		   return true;
+	   }
+	return false;
+}
+
+static bool commitAction(BuildAction a) {
+	bool didCommit = false;
 	if (a == BuildAction::Type::BUILD_SCV) {
 		filter(Broodwar->self()->getUnits(), BWAPI::Filter::GetType == BWAPI::UnitTypes::Terran_Command_Center, 
-			[](BWAPI::Unit u){
-				u->train(BWAPI::UnitTypes::Terran_SCV);
+			[&didCommit](BWAPI::Unit u){
+				if(requirements(BWAPI::UnitTypes::Terran_SCV)) {
+					u->train(BWAPI::UnitTypes::Terran_SCV);
+					didCommit = true;
+				}
 				return false;
 				});
 	}
 	else if (a == BuildAction::Type::BUILD_MARINE) {
 		filter(Broodwar->self()->getUnits(), BWAPI::Filter::GetType == BWAPI::UnitTypes::Terran_Barracks, 
-			[](BWAPI::Unit u){
+			[&didCommit](BWAPI::Unit u){
 				if(!u->isTraining()) {
-					u->train(BWAPI::UnitTypes::Terran_Marine);
+					if(requirements(BWAPI::UnitTypes::Terran_Marine)) {
+						u->train(BWAPI::UnitTypes::Terran_Marine);
+						didCommit = true;
+					}
 					return false;
 				}
 				return true;
@@ -186,10 +200,13 @@ static void commitAction(BuildAction a) {
 	}
 	else if (a == BuildAction::Type::BUILD_SUPPLY) {
 		filter(Broodwar->self()->getUnits(), BWAPI::Filter::IsWorker, 
-			[](BWAPI::Unit u){
+			[&didCommit](BWAPI::Unit u){
 				if(!u->isConstructing()) {
 					auto target_loc = Broodwar->getBuildLocation(BWAPI::UnitTypes::Terran_Supply_Depot, u->getTilePosition());
-					u->build(BWAPI::UnitTypes::Terran_Supply_Depot, target_loc);
+					if(requirements(BWAPI::UnitTypes::Terran_Supply_Depot)) {
+						u->build(BWAPI::UnitTypes::Terran_Supply_Depot, target_loc);
+						didCommit = true;
+					}
 					return false;
 				}
 				return true;
@@ -197,18 +214,26 @@ static void commitAction(BuildAction a) {
 	}
 	else if (a == BuildAction::Type::BUILD_BARRACK) {
 		filter(Broodwar->self()->getUnits(), BWAPI::Filter::IsWorker, 
-			[](BWAPI::Unit u){
+			[&didCommit](BWAPI::Unit u){
 				if(!u->isConstructing()) {
 					auto target_loc = Broodwar->getBuildLocation(BWAPI::UnitTypes::Terran_Barracks, u->getTilePosition());
-					u->build(BWAPI::UnitTypes::Terran_Barracks, target_loc);
+					if(requirements(BWAPI::UnitTypes::Terran_Barracks)) {
+						u->build(BWAPI::UnitTypes::Terran_Barracks, target_loc);
+						didCommit = true;
+					}
 					return false;
 				}
 				return true;
 				});
 	}
+	else if (a == BuildAction::Type::IDLE) {
+		didCommit = true;
+	}
+	return didCommit;
 }
 
-static void commitAction(UnitAction a, Unit me, bool debug) {
+static bool commitAction(UnitAction a, Unit me, bool debug) {
+	bool didCommit = false;
 	if (a == UnitAction::Type::ATTACK) {
 		if (debug)
 			std::cout << "MY QUEST IS TO ATTACK" << std::endl;
@@ -219,9 +244,10 @@ static void commitAction(UnitAction a, Unit me, bool debug) {
 		//	return left->getHitPoints() < right->getHitPoints();
 		//});
 		auto target = me->getClosestUnit(IsEnemy && !IsBuilding);
-		if (target && !me->getType().isWorker()) {
+		if (target) {
 			me->attack(target);
 			Broodwar->drawLineMap(me->getPosition(), target->getPosition(), Color(255, 0, 0));
+			didCommit = true;
 		}
 	}
 	else if (a == UnitAction::Type::REPAIR) {
@@ -233,9 +259,10 @@ static void commitAction(UnitAction a, Unit me, bool debug) {
 		auto target = find_max(friendlyUnits, [](Unit left, Unit right) {
 			return left->getHitPoints() < right->getHitPoints();
 		});
-		if (target) {
+		if (target && me->getType() == BWAPI::UnitTypes::Terran_SCV) {
 			me->repair(target);
 			Broodwar->drawLineMap(me->getPosition(), target->getPosition(), Color(0, 255, 0));
+			didCommit = true;
 		}
 	}
 	else if (a == UnitAction::Type::FLEE) {
@@ -247,24 +274,30 @@ static void commitAction(UnitAction a, Unit me, bool debug) {
 			auto move_target = me->getPosition() + delta * (-1);
 			Broodwar->drawLineMap(me->getPosition(), move_target, Color(0, 0, 255));
 			me->move(move_target);
+			didCommit = true;
 		}
 	}
 	else if (a == UnitAction::Type::MINE) {
 		if (debug)
 			std::cout << "MINE QUEST IS TO MINE!!!" << std::endl;
-		if(!me->isGatheringMinerals()) {
+		if(me->isGatheringMinerals()) {
+			didCommit = true;
+		}
+		if(me->getType().isWorker() && !me->isGatheringMinerals()) {
 			if(me->isCarryingMinerals()) {
 				me->returnCargo();
+				didCommit = true;
 			}
 			else {
 				auto target = me->getClosestUnit(IsMineralField);
 				if (target) {
 					me->gather(target);
+					didCommit = true;
 				}
 			}
 		}
 	}
-
+	return didCommit;
 }
 
 
@@ -324,6 +357,7 @@ void ExampleAIModule::onStart()
 	}
 	start_time = time(NULL);
 	force_lose = false;
+	// std::cout << "Starting" << std::endl; 
 }
 
 void ExampleAIModule::onEnd(bool isWinner)
@@ -334,9 +368,15 @@ void ExampleAIModule::onEnd(bool isWinner)
 	//	std::ofstream out(buf);
 	//	out << (isWinner ? "1" : "0");
 	//}
-	bh.winner = (!force_lose) && isWinner;
+	if(force_lose) {
+		bh.winner = 0; // Draw from timeout
+	}
+	else {
+		bh.winner = isWinner ? 1 : (-1);
+	}
 	// std::cout << "THE END! I AM " << (isWinner ? "WINNER" : "LOOSER") << std::endl;
 	bh.save(get_resname());
+	std::cout << "(" << bh.umodel.get_frames() << ", " <<  bh.bmodel.get_frames() << ")";
 //   std::cout << "THEOTHERSIDE!" << std::endl;
 }
 
@@ -346,7 +386,6 @@ static uint32_t nexttick = 0;
 void ExampleAIModule::onFrame()
 {
 	// Called once every game frame
-	++frames;
 
 	// Return if the game is a replay or is paused
 	if (Broodwar->isReplay() || Broodwar->isPaused() || !Broodwar->self())
@@ -359,10 +398,31 @@ void ExampleAIModule::onFrame()
 
 	bool did_lose = true;
 
+	++frames;
+	if (frames == (MAX_FRAMES - 100)) {
+		// Broodwar->sendText("timeout");
+		force_lose = true;
+	}
+	else if(frames > MAX_FRAMES) {
+		// std::cout << "@@@ Timeout!" << std::endl;
+		//onEnd(false);
+		Broodwar->leaveGame();
+	}
+
 	if((frames & 0xf) == 0) {
 		auto bs{ createBuildState() };
 		auto baction{ bh.bmodel.get_action(bs) };
-		commitAction(baction);
+		if(commitAction(baction)) {
+			if(baction == BA::IDLE) {
+				bh.bmodel.record_action(bs, baction, -0.1);
+			}
+			else {
+				bh.bmodel.record_action(bs, baction, 0.0);
+			}
+		}
+		else {
+			bh.bmodel.record_action(bs, baction, -0.1);
+		}
 	}
 
 	// Iterate through all the units that we own
@@ -401,7 +461,12 @@ void ExampleAIModule::onFrame()
 			{
 				auto s{ createUnitState(u) };
 				auto uaction{ bh.umodel.get_action(s) };
-				commitAction(uaction, u, debug);
+				if(commitAction(uaction, u, debug)) {
+					bh.umodel.record_action(s, uaction, 0.0f);
+				}
+				else {
+					bh.umodel.record_action(s, uaction, -0.1f);
+				}
 			} // closure: if idle
 		}
 	} // closure: unit iterator
@@ -412,15 +477,6 @@ void ExampleAIModule::onFrame()
 	// double elapsed = difftime(time(NULL), start_time);
 	// if (debug)
 	// 	std::cout << "@ ELAPSED " << elapsed << std::endl;
-	if (frames == 9900) {
-		// Broodwar->sendText("timeout");
-		force_lose = true;
-	}
-	else if(frames > 10000) {
-		//std::cout << "@@@ Timeout!" << std::endl;
-		//onEnd(false);
-		Broodwar->leaveGame();
-	}
 
 }
 

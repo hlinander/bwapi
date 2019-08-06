@@ -17,6 +17,9 @@
 
 #define CASEPRINT(x) case x: return #x
 
+// #define DEBUG(...) printf(__VA_ARGS__)
+#define DEBUG(...) {}
+
 enum Param {
 	TEAM_HP = 0,
 	TEAM_COUNT,
@@ -43,7 +46,7 @@ enum BuildParam {
 	MAX_BUILD
 };
 
-static const char* build_param_to_string(BuildParam b) {
+static const char* param_to_string(BuildParam b) {
 	switch(b) {
 		CASEPRINT(MINERALS);
 		CASEPRINT(GAS);
@@ -152,7 +155,7 @@ struct Action {
 };
 
 
-const int N_HIDDEN = 10;
+const int N_HIDDEN = 64;
 
 // using State = Eigen::Matrix<float, N, 1>;
 template<size_t N>
@@ -176,9 +179,12 @@ struct Net : torch::nn::Module {
 	Net() {
 		bn = register_module("bn", torch::nn::BatchNorm(StateSize));
 		fc1 = register_module("fc1", torch::nn::Linear(StateSize, N_HIDDEN));
-		fc2 = register_module("fc2", torch::nn::Linear(N_HIDDEN, TAction::MAX));
+		fc2 = register_module("fc2", torch::nn::Linear(N_HIDDEN, N_HIDDEN));
+		fc3 = register_module("fc3", torch::nn::Linear(N_HIDDEN, TAction::MAX));
 		torch::nn::init::xavier_normal_(fc1->weight);
 		torch::nn::init::xavier_normal_(fc2->weight);
+		torch::nn::init::xavier_normal_(fc3->weight);
+		torch::nn::init::zeros_(fc3->bias);
 		torch::nn::init::zeros_(fc2->bias);
 		torch::nn::init::zeros_(fc1->bias);
 	}
@@ -186,16 +192,17 @@ struct Net : torch::nn::Module {
 	torch::Tensor forward(torch::Tensor x) {
 		// std::cout << "x: " << torch::mean(x) << std::endl;
 		// std::cout << "stdx: " << torch::std(x) << std::endl;
-		// x = bn->forward(x);
+		x = bn->forward(x);
 		// std::cout << "bn: " << torch::mean(x) << std::endl;
 		// std::cout << "bnstdx: " << torch::std(x) << std::endl;
-		x = torch::relu(fc1->forward(x));
-		x = fc2->forward(x);
+		x = torch::leaky_relu(fc1->forward(x));
+		x = torch::leaky_relu(fc2->forward(x));
+		x = fc3->forward(x);
 		return x;
 	}
 
 	torch::nn::BatchNorm bn{nullptr};
-	torch::nn::Linear fc1{nullptr}, fc2{nullptr};
+	torch::nn::Linear fc1{nullptr}, fc2{nullptr}, fc3{nullptr};
 };
 
 template<typename TAction, size_t StateSize, size_t BatchSize>
@@ -222,6 +229,7 @@ struct Model {
 	{
 		a(cereal::make_nvp("actions", actions));
 		a(cereal::make_nvp("states", states));
+		a(cereal::make_nvp("immidiate_rewards", immidiate_rewards));
 		a(cereal::make_nvp("probs", probs));
 		a(cereal::make_nvp("avg_rewards", avg_rewards));
 		std::stringstream ss;
@@ -237,6 +245,7 @@ struct Model {
 	{
 		a(cereal::make_nvp("actions", actions));
 		a(cereal::make_nvp("states", states));
+		a(cereal::make_nvp("immidiate_rewards", immidiate_rewards));
 		a(cereal::make_nvp("probs", probs));
 		a(cereal::make_nvp("avg_rewards", avg_rewards));
 		std::string s;
@@ -274,19 +283,43 @@ struct Model {
 	TAction get_action(StateType &s) {
 		torch::Tensor out = torch::softmax(forward(s), -1);
 		auto out_a = out.accessor<float,2>();
+		float eps = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
 		float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
 		float v = 0;
+		//TAction action{static_cast<typename TAction::Type>(torch::argmax(out[0]).item<uint32_t>())};
 		TAction action;
+		TAction sampled_action;
+		TAction max_action;
+		float max = 0.0f;
 		for (; action != TAction::MAX; ++action) {
-			v += out_a[0][static_cast<int>(action)];
-			if (r <= v || action == TAction::MAX - 1) {
-				probs.push_back(out_a[0][static_cast<int>(action)]);
+			float p = out_a[0][static_cast<int>(action)];
+			if(p > max) {
+				max = p;
+				max_action = action;	
+			}
+		}
+		for (; sampled_action != TAction::MAX; ++sampled_action) {
+			v += out_a[0][static_cast<int>(sampled_action)];
+			if (r <= v || sampled_action == TAction::MAX - 1) {
+				//probs.push_back(out_a[0][static_cast<int>(sampled_action)]);
 				break;
 			}
 		}
-		actions.push_back(action);
-		states.push_back(s);
+		if(eps < 1.0) {
+			action = sampled_action;
+		}
+		else {
+			action = max_action;
+		}
+		// actions.push_back(action);
+		// states.push_back(s);
 		return action;
+	}
+
+	void record_action(StateType &s, TAction &a, float immidiate_reward) {
+		states.push_back(s);
+		actions.push_back(a);
+		immidiate_rewards.push_back(immidiate_reward);
 	}
 
 	TAction saved_action(int frame) {
@@ -299,10 +332,11 @@ struct Model {
 
 	// Net<TAction, StateSize> net;
 	std::shared_ptr<NetType> net;
-	torch::optim::SGD optimizer;
+	torch::optim::Adam optimizer;
 	std::array<float, BatchSize * StateSize> batch_data;
 	std::vector<TAction> actions;
 	std::vector<StateType> states;
+	std::vector<float> immidiate_rewards;
 	std::vector<float> probs;
 	std::vector<float> avg_rewards;
 };
@@ -319,11 +353,11 @@ template<size_t BatchSize>
 struct BrainHerder {
 	UnitModel<BatchSize> umodel;
 	BuildModel<BatchSize> bmodel;
-	bool winner;
+	int winner;
 	float avg_ureward;
 	float avg_breward;
 
-	BrainHerder(float lr) : umodel(lr), bmodel(lr), winner{false}, avg_ureward{0}, avg_breward{0} {}
+	BrainHerder(float lr) : umodel(lr), bmodel(lr), winner{0}, avg_ureward{0}, avg_breward{0} {}
 
 	void save(const std::string& path) {
 		std::stringstream ss;
