@@ -27,7 +27,16 @@ template<size_t N>
 void print_state(std::array<float, N> &state) {
 	std::cout << "[";
 	for(auto &e: state) {
-		std::cout << e << ", " << std::endl;
+		std::cout << e << ", ";
+	}
+	std::cout << "]" << std::endl;
+}
+
+void print_tensor_1d(torch::Tensor t) {
+	auto a = t.accessor<float, 1>();
+	std::cout << "[";
+	for(int i = 0; i < a.size(0); ++i) {
+		std::cout << a[i] << ", ";
 	}
 	std::cout << "]" << std::endl;
 }
@@ -77,7 +86,7 @@ Reward calculate_rewards(int winner, Model<T, N, BS> &experience, state_reward_m
 	ret.rewards.resize(experience.get_frames());
 	std::fill(std::begin(ret.rewards), std::end(ret.rewards), 0.0f);
 	ret.total_reward = 0.0;
-	float reward = winner * 10.0f;
+	float reward = 0.0f;//winner * 10.0f;
 	for (int frame = experience.get_frames() - 1; frame >= 1; --frame) {
 		reward += experience.immidiate_rewards[frame];
 		for(auto& reward_pair: sr) {
@@ -112,11 +121,12 @@ void debug_models(bool winner, Model<T, N, BS> &prev, Model<T, N, BS> &next) {
 		auto action = prev.actions[frame];
 		float r = pnext[0][action].template item<float>() / p[0][action].template item<float>();
 		auto rs = pnext[0] / p[0];
+		print_tensor_1d(rs);
 		float creward = reward.rewards[frame];
 		float adv = reward.rewards[frame];// - prev.avg_ureward;
-		std::cout << "rs: " << rs << std::endl;
+		// std::cout << "rs: " << rs << std::endl;
 		// std::cout << "pnext: " << pnext << std::endl;
-		std::cout << action.name() << " @ " << p[0][action].template item<float>() << " reward: " << creward << " adv: " << adv  << " r: " << r << std::endl;
+		std::cout << "-{" << frame << ", " << prev.time_stamps[frame] << "}- " << action.name() << " @ " << p[0][action].template item<float>() << " reward: " << creward << " adv: " << adv  << " r: " << r << std::endl;
 		std::cout << prev.states[frame][Param::TEAM_MINERALS] * 2000.0 << std::endl;
 
 	}
@@ -315,7 +325,7 @@ int main(int argc, char* argv[])
 		bh.umodel.avg_rewards.push_back(bh.avg_ureward);
 		bh.bmodel.avg_rewards.push_back(bh.avg_breward);
 		bh.save(argv[4]);
-		std::cout << total << " games with " << winners << " winners, avg. reward " << bh.avg_ureward << std::endl;
+		std::cout << std::endl << total << " games with " << winners << " winners, avg. reward " << bh.avg_ureward << std::endl;
 		std::cout << "Highest reward game is " << high_game << " with " << high_reward << std::endl;
 		print_stats(ustats, total_uframes);
 		print_stats(bstats, total_bframes);

@@ -1,6 +1,7 @@
 #include "ExampleAIModule.h"
 
 #include <ctime>
+#include <chrono>
 
 #include <iostream>
 #include <fstream>
@@ -9,6 +10,11 @@
 
 using namespace BWAPI;
 using namespace Filter;
+
+float get_seconds(std::chrono::high_resolution_clock::time_point start) {
+	auto dur = std::chrono::duration_cast<std::chrono::duration<float>>(std::chrono::high_resolution_clock::now() - start);
+	return dur.count();
+}
 
 static std::vector<std::string> get_tokens(std::string s) {
 	size_t pos = 0;
@@ -167,7 +173,7 @@ bool filter(BWAPI::Unitset us, const BWAPI::UnitFilter &pred, T cb) {
 
 bool requirements(BWAPI::UnitType t) {
 	if(Broodwar->self()->minerals() > t.mineralPrice() && 
-	   Broodwar->self()->supplyTotal() - Broodwar->self()->supplyUsed() > t.supplyRequired()) {
+	   Broodwar->self()->supplyTotal() - Broodwar->self()->supplyUsed() >= t.supplyRequired()) {
 		   return true;
 	   }
 	return false;
@@ -259,7 +265,8 @@ static bool commitAction(UnitAction a, Unit me, bool debug) {
 		auto target = find_max(friendlyUnits, [](Unit left, Unit right) {
 			return left->getHitPoints() < right->getHitPoints();
 		});
-		if (target && me->getType() == BWAPI::UnitTypes::Terran_SCV) {
+		if (target && me->getType() == BWAPI::UnitTypes::Terran_SCV
+				   && target->getHitPoints() < target->getType().maxHitPoints()) {
 			me->repair(target);
 			Broodwar->drawLineMap(me->getPosition(), target->getPosition(), Color(0, 255, 0));
 			didCommit = true;
@@ -356,7 +363,9 @@ void ExampleAIModule::onStart()
 		// 	Broodwar << "The matchup is " << Broodwar->self()->getRace() << " vs " << Broodwar->enemy()->getRace() << std::endl;
 	}
 	start_time = time(NULL);
+	start_chrono = std::chrono::high_resolution_clock::now();
 	force_lose = false;
+	// std::cout << "SCV build time " << BWAPI::UnitTypes::Terran_SCV.buildTime() << std::endl;
 	// std::cout << "Starting" << std::endl; 
 }
 
@@ -414,14 +423,14 @@ void ExampleAIModule::onFrame()
 		auto baction{ bh.bmodel.get_action(bs) };
 		if(commitAction(baction)) {
 			if(baction == BA::IDLE) {
-				bh.bmodel.record_action(bs, baction, -0.1);
+				bh.bmodel.record_action(bs, baction, -0.1, frames);
 			}
 			else {
-				bh.bmodel.record_action(bs, baction, 0.0);
+				bh.bmodel.record_action(bs, baction, 0.0, frames);
 			}
 		}
 		else {
-			bh.bmodel.record_action(bs, baction, -0.1);
+			bh.bmodel.record_action(bs, baction, -0.1, frames);
 		}
 	}
 
@@ -462,10 +471,10 @@ void ExampleAIModule::onFrame()
 				auto s{ createUnitState(u) };
 				auto uaction{ bh.umodel.get_action(s) };
 				if(commitAction(uaction, u, debug)) {
-					bh.umodel.record_action(s, uaction, 0.0f);
+					bh.umodel.record_action(s, uaction, 0.0f, frames);
 				}
 				else {
-					bh.umodel.record_action(s, uaction, -0.1f);
+					bh.umodel.record_action(s, uaction, -0.1f, frames);
 				}
 			} // closure: if idle
 		}

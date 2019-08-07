@@ -1,5 +1,6 @@
 #pragma once
 #include <BWAPI.h>
+#include <chrono>
 
 #include "AIStructs.h"
 
@@ -31,6 +32,7 @@ private:
 	BrainHerder<1> bh;
   torch::NoGradGuard no_grad;
 	time_t start_time;
+  std::chrono::high_resolution_clock::time_point start_chrono;
 	bool debug;
 	bool force_lose;
 };

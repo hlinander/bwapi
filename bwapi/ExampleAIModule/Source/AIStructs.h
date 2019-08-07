@@ -192,7 +192,7 @@ struct Net : torch::nn::Module {
 	torch::Tensor forward(torch::Tensor x) {
 		// std::cout << "x: " << torch::mean(x) << std::endl;
 		// std::cout << "stdx: " << torch::std(x) << std::endl;
-		x = bn->forward(x);
+		// x = bn->forward(x);
 		// std::cout << "bn: " << torch::mean(x) << std::endl;
 		// std::cout << "bnstdx: " << torch::std(x) << std::endl;
 		x = torch::leaky_relu(fc1->forward(x));
@@ -231,6 +231,7 @@ struct Model {
 		a(cereal::make_nvp("states", states));
 		a(cereal::make_nvp("immidiate_rewards", immidiate_rewards));
 		a(cereal::make_nvp("probs", probs));
+		a(cereal::make_nvp("time_stamps", time_stamps));
 		a(cereal::make_nvp("avg_rewards", avg_rewards));
 		std::stringstream ss;
 		torch::save(net, ss);
@@ -247,6 +248,7 @@ struct Model {
 		a(cereal::make_nvp("states", states));
 		a(cereal::make_nvp("immidiate_rewards", immidiate_rewards));
 		a(cereal::make_nvp("probs", probs));
+		a(cereal::make_nvp("time_stamps", time_stamps));
 		a(cereal::make_nvp("avg_rewards", avg_rewards));
 		std::string s;
 		a(s);
@@ -316,10 +318,11 @@ struct Model {
 		return action;
 	}
 
-	void record_action(StateType &s, TAction &a, float immidiate_reward) {
+	void record_action(StateType &s, TAction &a, float immidiate_reward, float seconds) {
 		states.push_back(s);
 		actions.push_back(a);
 		immidiate_rewards.push_back(immidiate_reward);
+		time_stamps.push_back(seconds);
 	}
 
 	TAction saved_action(int frame) {
@@ -336,6 +339,7 @@ struct Model {
 	std::array<float, BatchSize * StateSize> batch_data;
 	std::vector<TAction> actions;
 	std::vector<StateType> states;
+	std::vector<uint32_t> time_stamps;
 	std::vector<float> immidiate_rewards;
 	std::vector<float> probs;
 	std::vector<float> avg_rewards;
