@@ -46,60 +46,52 @@ static std::string get_resname() {
 	return ss.str();
 }
 
+template<typename T>
+static constexpr float mf(T x) {
+	return static_cast<float>(x);
+}
+static void writeUnitState(BWAPI::Unit u, UnitParam &up) {
+	up.attacked = u->isUnderAttack();
+	up.repaired = u->isBeingHealed();
 
-static BuildState createBuildState() {
-	BuildState bs;
-	std::fill(std::begin(bs), std::end(bs), 0.0f);
-	bs[MINERALS] = Broodwar->self()->minerals() / 2000.0;
-	bs[GAS] = Broodwar->self()->gas() / 2000.0;
-	bs[N_SCVS] = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_SCV) / 200.0; 
-	bs[N_MARINES] = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_Marine) / 200.0;
-	bs[N_SUPPLY_DEPOTS] = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_Supply_Depot) / 200.0;
-	bs[N_BARRACKS] = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_Barracks) / 200.0;
-	return bs;
+	up.constructing = u->isConstructing();
+	up.repairing = u->isRepairing();
+	up.gathering = u->isGatheringGas() || u->isGatheringMinerals();
+	up.attacking = u->isAttacking();
+	up.moving = u->isMoving();
+	up.hp = mf(u->getHitPoints()) / mf(u->getType().maxHitPoints());
+	up.unit_types[SCV] = u->getType() == BWAPI::UnitTypes::Terran_SCV;
+	up.unit_types[MARINE] = u->getType() == BWAPI::UnitTypes::Terran_Marine;
+}
+static StateParam createState() {
+	float n_buildings = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Buildings);
+	float n_units = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_SCV) + Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_Marine);
+	StateParam p;
+	p.minerals = Broodwar->self()->minerals() / 2000.0;
+	p.gas = Broodwar->self()->gas() / 2000.0;
+	p.n_supply_depots = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_Supply_Depot) / n_buildings;
+	p.n_barracks = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_Barracks) / n_buildings;
+	p.n_marines = Broodwar->self()->allUnitCount(BWAPI::UnitTypes::Terran_Marine) / n_units;
+	p.supply = static_cast<float>(Broodwar->self()->supplyUsed()) / static_cast<float>(Broodwar->self()->supplyTotal());
+	size_t index = 0;
+	for(auto& u: Broodwar->self()->getUnits()) {
+		writeUnitState(u, p.friendly[index]);
+	}
+	for(auto& u: Broodwar->enemy()->getUnits()) {
+		writeUnitState(u, p.enemy[index]);
+	}
+	return p;
 }
 
-static UnitState createUnitState(Unit me) {
-	UnitState s;
-	std::fill(std::begin(s), std::end(s), 0.0f);
-	for (auto u : Broodwar->enemy()->getUnits()) {
-		if (!u->getType().isBuilding()) {
-			s[Param::ENEMY_COUNT]++;
-			s[Param::ENEMY_HP] += u->getHitPoints();
-		}
-	}
-	s[Param::ENEMY_COUNT] *= (1.0 / 200.0);
-	s[Param::ENEMY_HP] *= (1.0 / 2000.0);
-	for (auto u : Broodwar->self()->getUnits()) {
-		if (!u->getType().isBuilding()) {
-			s[Param::TEAM_COUNT]++;
-			s[Param::TEAM_HP] += u->getHitPoints();
-		}
-	}
-	s[Param::TEAM_COUNT] *= (1.0 / 200.0);
-	s[Param::TEAM_HP] *= (1.0 / 2000.0);
-	s[Param::ME_HP] = static_cast<float>(me->getHitPoints()) / 200.0;
-	auto closest = me->getClosestUnit(IsEnemy && !IsBuilding);
-	s[Param::ENEMY_DISTANCE] = (closest ? closest->getPosition().getDistance(me->getPosition()) : 64.0f) / 3000.0;
-	closest = me->getClosestUnit(!IsEnemy && !IsBuilding);
-	s[Param::TEAM_DISTANCE] = (closest ? closest->getPosition().getDistance(me->getPosition()) : 64.0f) / 3000.0;
-	s[Param::ME_ATTACKED] = static_cast<float>(me->isUnderAttack());
-	s[Param::ME_REPAIRED] = static_cast<float>(me->isBeingHealed());
-	s[Param::TEAM_MINERALS] = Broodwar->self()->minerals() / 2000.0;
-	s[Param::ME_SCV] = static_cast<float>(me->getType() == BWAPI::UnitTypes::Terran_SCV);
-	s[Param::ME_MARINE] = static_cast<float>(me->getType() == BWAPI::UnitTypes::Terran_Marine);
-	return s;
-}
-
-template <typename T>
-BWAPI::Unit find_unit_in(BWAPI::Unitset us, T cb) {
-	for (auto &x : us) {
-		if (cb(x)) {
-			return x;
-		}
-	}
-	return nullptr;
-}
+// template <typename T>
+// BWAPI::Unit find_unit_in(BWAPI::Unitset us, T cb) {
+// 	for (auto &x : us) {
+// 		if (cb(x)) {
+// 			return x;
+// 		}
+// 	}
+// 	return nullptr;
+// }
 
 template <class TContainer, typename T>
 BWAPI::Unit find_max(TContainer us, T cb) {
@@ -118,25 +110,25 @@ BWAPI::Unit find_max(TContainer us, T cb) {
 	return *win;
 }
 
-template <typename T>
-BWAPI::Unit find_max_friend(T cb) {
-	return find_max(Broodwar->self()->getUnits(), cb);
-}
+// template <typename T>
+// BWAPI::Unit find_max_friend(T cb) {
+// 	return find_max(Broodwar->self()->getUnits(), cb);
+// }
 
-template <typename T>
-BWAPI::Unit find_max_enemy(T cb) {
-	return find_max(Broodwar->enemy()->getUnits(), cb);
-}
+// template <typename T>
+// BWAPI::Unit find_max_enemy(T cb) {
+// 	return find_max(Broodwar->enemy()->getUnits(), cb);
+// }
 
-template <typename T>
-BWAPI::Unit find_friend(T cb) {
-	return find_unit_in(Broodwar->self()->getUnits(), cb);
-}
+// template <typename T>
+// BWAPI::Unit find_friend(T cb) {
+// 	return find_unit_in(Broodwar->self()->getUnits(), cb);
+// }
 
-template <typename T>
-BWAPI::Unit find_enemy(T cb) {
-	return find_unit_in(Broodwar->enemy()->getUnits(), cb);
-}
+// template <typename T>
+// BWAPI::Unit find_enemy(T cb) {
+// 	return find_unit_in(Broodwar->enemy()->getUnits(), cb);
+// }
 
 template <typename T>
 std::vector<BWAPI::Unit> filter_units(BWAPI::Unitset us, T cb) {
@@ -250,7 +242,7 @@ static bool commitAction(UnitAction a, Unit me, bool debug) {
 		//	return left->getHitPoints() < right->getHitPoints();
 		//});
 		auto target = me->getClosestUnit(IsEnemy && !IsBuilding);
-		if (target) {
+		if (target && !me->getType().isWorker()) {
 			me->attack(target);
 			Broodwar->drawLineMap(me->getPosition(), target->getPosition(), Color(255, 0, 0));
 			didCommit = true;
@@ -418,19 +410,19 @@ void ExampleAIModule::onFrame()
 		Broodwar->leaveGame();
 	}
 
+	auto state{ createState() };
 	if((frames & 0xf) == 0) {
-		auto bs{ createBuildState() };
-		auto baction{ bh.bmodel.get_action(bs) };
+		auto baction{ bh.bmodel.get_action(state) };
 		if(commitAction(baction)) {
 			if(baction == BA::IDLE) {
-				bh.bmodel.record_action(bs, baction, -0.1, frames);
+				bh.bmodel.record_action(state, baction, -0.1, frames);
 			}
 			else {
-				bh.bmodel.record_action(bs, baction, 0.0, frames);
+				bh.bmodel.record_action(state, baction, 0.0, frames);
 			}
 		}
 		else {
-			bh.bmodel.record_action(bs, baction, -0.1, frames);
+			bh.bmodel.record_action(state, baction, -0.1, frames);
 		}
 	}
 
@@ -468,13 +460,13 @@ void ExampleAIModule::onFrame()
 		{
 			if((frames % 4) == 0)
 			{
-				auto s{ createUnitState(u) };
-				auto uaction{ bh.umodel.get_action(s) };
+				writeUnitState(u, state.me);
+				auto uaction{ bh.umodel.get_action(state) };
 				if(commitAction(uaction, u, debug)) {
-					bh.umodel.record_action(s, uaction, 0.0f, frames);
+					bh.umodel.record_action(state, uaction, 0.0f, frames);
 				}
 				else {
-					bh.umodel.record_action(s, uaction, -0.1f, frames);
+					bh.umodel.record_action(state, uaction, -0.1f, frames);
 				}
 			} // closure: if idle
 		}

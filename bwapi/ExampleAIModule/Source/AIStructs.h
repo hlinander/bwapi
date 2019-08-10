@@ -20,64 +20,57 @@
 // #define DEBUG(...) printf(__VA_ARGS__)
 #define DEBUG(...) {}
 
-enum Param {
-	TEAM_HP = 0,
-	TEAM_COUNT,
-	TEAM_DISTANCE,
-	TEAM_MINERALS,
-	ENEMY_DISTANCE,
-	ENEMY_COUNT,
-	ENEMY_HP,
-	ME_HP,
-	ME_ATTACKED,
-	ME_REPAIRED,
-	ME_SCV,
-	ME_MARINE,
-	MAX_PARAM
+#define N_UNITS 200
+
+enum UnitTypes {
+	SCV,
+	MARINE,
+	N_UNIT_TYPES
 };
 
-enum BuildParam {
-	MINERALS,
-	GAS,
-	N_SCVS,
-	N_MARINES,
-	N_SUPPLY_DEPOTS,
-	N_BARRACKS,
-	MAX_BUILD
-};
+struct UnitParam {
+	float hp;
+	float attacked;
+	float repaired;
+	float moving;
+	float attacking;
+	float gathering;
+	float repairing;
+	float constructing;
+	std::array<float, N_UNIT_TYPES> unit_types;
 
-static const char* param_to_string(BuildParam b) {
-	switch(b) {
-		CASEPRINT(MINERALS);
-		CASEPRINT(GAS);
-		CASEPRINT(N_SCVS);
-		CASEPRINT(N_MARINES);
-		CASEPRINT(N_SUPPLY_DEPOTS);
-		CASEPRINT(N_BARRACKS);
+	template<class Archive>
+	void serialize(Archive &a) {
+		a(hp, attacked, repaired, moving, attacking, gathering, repairing, constructing, unit_types);
 	}
-	return "BA::Unknown";
-}
-
-const std::map<Param, const char*> ParamS = {
 };
 
-static const char* param_to_string(Param p) {
-	switch(p) {
-		CASEPRINT(Param::TEAM_HP);
-		CASEPRINT(Param::TEAM_COUNT);
-		CASEPRINT(Param::TEAM_DISTANCE);
-		CASEPRINT(Param::TEAM_MINERALS);
-		CASEPRINT(Param::ENEMY_DISTANCE);
-		CASEPRINT(Param::ENEMY_COUNT);
-		CASEPRINT(Param::ENEMY_HP);
-		CASEPRINT(Param::ME_HP);
-		CASEPRINT(Param::ME_ATTACKED);
-		CASEPRINT(Param::ME_REPAIRED);
-		CASEPRINT(Param::ME_SCV);
-		CASEPRINT(Param::ME_MARINE);
+#define STATE_OFF(name) ((((size_t)&((StateParam *)nullptr)->name)) / sizeof(float))
+struct StateParam {
+	StateParam() {
+		memset(this, 0, sizeof(*this));
 	}
-	return "BA::Unknown";
-}
+
+	float& operator [](size_t n) {
+		return reinterpret_cast<float*>(this)[n];
+	}
+	template<class Archive>
+	void serialize(Archive &a) {
+		a(minerals, gas, supply, n_barracks, n_supply_depots, n_marines, me, friendly, enemy);
+	}
+
+	float *data() { return reinterpret_cast<float*>(this); }
+	static constexpr size_t count() { return sizeof(StateParam) / sizeof(float); }
+	float minerals;
+	float gas;
+	float supply;
+	float n_barracks;
+	float n_supply_depots;
+	float n_marines;
+	UnitParam me;
+	std::array<UnitParam, N_UNITS> friendly;
+	std::array<UnitParam, N_UNITS> enemy;
+};
 
 enum class BA {
 	BUILD_SCV = 0,
@@ -115,6 +108,8 @@ static const char* action_to_string(BA a) {
 		STRACTION(BA::BUILD_MARINE);
 		STRACTION(BA::BUILD_SUPPLY);
 		STRACTION(BA::IDLE);
+		default:
+			break;
 	}
 	return "BA::Unknown";
 }
@@ -157,28 +152,14 @@ struct Action {
 
 const int N_HIDDEN = 64;
 
-// using State = Eigen::Matrix<float, N, 1>;
-template<size_t N>
-using State = std::array<float, N>;
-using UnitState = State<static_cast<size_t>(Param::MAX_PARAM)>;
-using BuildState = State<static_cast<size_t>(BuildParam::MAX_BUILD)>;
-//template<int rows, int cols>
-//Eigen::Matrix<float, rows, cols> grads(Dense &layer) {
-//	Eigen::Matrix<float, rows, cols> ret;
-//
-//}
-
 float relu(const float x);
 float drelu(const float x);
 
-//template<int rows, int cols>
-Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> softmax(Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> in);
-
-template<typename TAction, size_t StateSize>
+template<typename TAction>
 struct Net : torch::nn::Module {
 	Net() {
-		bn = register_module("bn", torch::nn::BatchNorm(StateSize));
-		fc1 = register_module("fc1", torch::nn::Linear(StateSize, N_HIDDEN));
+		bn = register_module("bn", torch::nn::BatchNorm(StateParam::count()));
+		fc1 = register_module("fc1", torch::nn::Linear(StateParam::count(), N_HIDDEN));
 		fc2 = register_module("fc2", torch::nn::Linear(N_HIDDEN, N_HIDDEN));
 		fc3 = register_module("fc3", torch::nn::Linear(N_HIDDEN, TAction::MAX));
 		torch::nn::init::xavier_normal_(fc1->weight);
@@ -205,10 +186,9 @@ struct Net : torch::nn::Module {
 	torch::nn::Linear fc1{nullptr}, fc2{nullptr}, fc3{nullptr};
 };
 
-template<typename TAction, size_t StateSize, size_t BatchSize>
+template<typename TAction>
 struct Model {
-	typedef State<StateSize> StateType;
-	typedef Net<TAction, StateSize> NetType;
+	typedef Net<TAction> NetType;
 	Model(float lr) : net{std::make_shared<NetType>()}, optimizer(net->parameters(), lr)
 	{
 	}
@@ -260,29 +240,24 @@ struct Model {
 		torch::load(optimizer, sso);		
 	}
 
-	torch::Tensor forward(StateType &s) {
-		auto ts = torch::from_blob(static_cast<void*>(s.data()), {1, StateSize}, torch::kFloat32);
+	torch::Tensor forward(StateParam &s) {
+		auto ts = torch::from_blob(static_cast<void*>(s.data()), {1, StateParam::count()}, torch::kFloat32);
 		return net->forward(ts);
 	}
 
-	torch::Tensor forward_batch(std::vector<StateType> &s) {
-		// std::vector<float> data;
-		// data.reserve(s.size() * StateSize);
-		for(int i = 0; i < BatchSize; ++i) {
-			std::copy(s[i].begin(), s[i].end(), &batch_data[i * StateSize]);
-		}
-		// for(int i = 0; i < BatchSize; ++i) {
-		// for(int j = 0; j < StateSize; ++j) {
-		// 	std::cout << batch_data[i * StateSize + j] << "|";
-		// }
-		// std::cout << std::endl;
-		// }
-		auto ts = torch::from_blob(static_cast<void*>(batch_data.data()), 
-								   {static_cast<long>(BatchSize), StateSize}, torch::kFloat32);
-		return net->forward(ts);
+	torch::Tensor forward_batch_nice(size_t first, size_t last) {
+		return net->forward(get_batch(first, last));
 	}
 
-	TAction get_action(StateType &s) {
+	torch::Tensor get_batch(size_t first, size_t last) {
+		return torch::from_blob(static_cast<void *>(states.data() + first), {static_cast<long>(last - first), StateParam::count()}, torch::kFloat32);
+	}
+
+	torch::Tensor forward_batch_nice(torch::Tensor t) {
+		return net->forward(t);
+	}
+
+	TAction get_action(StateParam &s) {
 		torch::Tensor out = torch::softmax(forward(s), -1);
 		auto out_a = out.accessor<float,2>();
 		float eps = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
@@ -318,7 +293,7 @@ struct Model {
 		return action;
 	}
 
-	void record_action(StateType &s, TAction &a, float immidiate_reward, float seconds) {
+	void record_action(StateParam &s, TAction &a, float immidiate_reward, float seconds) {
 		states.push_back(s);
 		actions.push_back(a);
 		immidiate_rewards.push_back(immidiate_reward);
@@ -333,12 +308,11 @@ struct Model {
 		return actions.size();
 	}
 
-	// Net<TAction, StateSize> net;
+	// Net<TAction, StateParam::count()> net;
 	std::shared_ptr<NetType> net;
 	torch::optim::Adam optimizer;
-	std::array<float, BatchSize * StateSize> batch_data;
 	std::vector<TAction> actions;
-	std::vector<StateType> states;
+	std::vector<StateParam> states;
 	std::vector<uint32_t> time_stamps;
 	std::vector<float> immidiate_rewards;
 	std::vector<float> probs;
@@ -348,15 +322,12 @@ struct Model {
 using UnitAction = Action<UA>;
 using BuildAction = Action<BA>;
 
-template<size_t BatchSize>
-using UnitModel = Model<UnitAction, static_cast<size_t>(Param::MAX_PARAM), BatchSize>;
-template<size_t BatchSize>
-using BuildModel = Model<BuildAction, static_cast<size_t>(BuildParam::MAX_BUILD), BatchSize>;
+using UnitModel = Model<UnitAction>;
+using BuildModel = Model<BuildAction>;
 
-template<size_t BatchSize>
 struct BrainHerder {
-	UnitModel<BatchSize> umodel;
-	BuildModel<BatchSize> bmodel;
+	UnitModel umodel;
+	BuildModel bmodel;
 	int winner;
 	float avg_ureward;
 	float avg_breward;
