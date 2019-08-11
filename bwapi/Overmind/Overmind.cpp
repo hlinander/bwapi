@@ -10,7 +10,7 @@
 //#include <torch/torch.h>
 
 const float LR = 0.001;//0.00000001;
-const int BATCH_SIZE = 3000;
+const int BATCH_SIZE = 1000;
 
 using stat_map = std::unordered_map<std::string, size_t>;
 using state_reward_map = std::unordered_map<size_t, float>;
@@ -153,13 +153,35 @@ float update_model(int winner, Model<T> &m, Model<T> &experience, stat_map &stat
 		auto logp = m.forward_batch_nice(experience.get_batch(frame, frame + actual_bs));
 		auto p = torch::softmax(logp, -1);
 		auto old_p = torch::softmax(experience.forward_batch_nice(frame, frame + actual_bs), -1);
-		loss = torch::tensor({0.0f});
+
+		auto mask = torch::from_blob(static_cast<void*>(&experience.one_hot_actions[frame]), {actual_bs, T::max()}, torch::kFloat32).to(m.net->device);
+		std::array<float, BATCH_SIZE * T::max()> rewards_batch{};
 		for(int i = 0; i < actual_bs; ++i) {
-			float adv = (reward.rewards[frame + i]);
-			auto r = p[i][experience.actions[frame + i]] / old_p[i][experience.actions[frame + i]];
-			loss += torch::min(r * adv, torch::clamp(r, 1 - 0.2, 1 + 0.2) * adv);
+			rewards_batch[i * T::max() + experience.actions[frame + i]] = reward.rewards[frame + i];
 		}
-		(-loss).backward();
+		auto trewards =torch::from_blob(static_cast<void*>(rewards_batch.data()), {actual_bs, T::max()}, torch::kFloat32).to(m.net->device);
+		//auto ones = torch::ones({actual_bs, T::max()}, torch::kFloat32);
+		// auto ones_masked = ones - mask;
+		// auto r = mask * p 
+		// auto masked_p = mask * (p.log());
+		auto masked_r = mask * (p / old_p);
+		auto lloss = torch::min(masked_r * trewards, torch::clamp(masked_r, 1.0 - 0.2, 1.0 + 0.2) * trewards).sum();
+		// auto indices = torch::tensor()
+		// auto loss 
+		// 0 1 0 0 0 <- 1
+		// 0 0 1 0 0 <- 2
+		// 1 0 0 0 0 <- 0
+		// 0 0 0 0 1 <- 4
+
+
+
+		// auto lloss = masked_p.sum();//torch::tensor({0.0f}, m.net->device);
+		//for(int i = 0; i < actual_bs; ++i) {
+		//	float adv = (reward.rewards[frame + i]);
+		//	auto r = p[i][experience.actions[frame + i]] / old_p[i][experience.actions[frame + i]];
+		//	loss += torch::min(r * adv, torch::clamp(r, 1 - 0.2, 1 + 0.2) * adv);
+		//}
+		(-lloss).backward();
 	}
 	DEBUG("Loss backwards\n");
 	DEBUG("Returning...\n");
@@ -169,6 +191,12 @@ float update_model(int winner, Model<T> &m, Model<T> &experience, stat_map &stat
 
 int main(int argc, char* argv[])
 {
+	if (torch::cuda::is_available()) {
+		std::cout << "CUDA!" << std::endl;
+	}
+	else {
+		std::cout << "CPU byxor!" << std::endl;
+	}
 	// torch::Tensor tensor = torch::rand({2, 3});
 	// auto s = at::sum(tensor);
 	// torch::save(s, "test.pt");
@@ -228,16 +256,18 @@ int main(int argc, char* argv[])
 			std::cout << "-update model result_list_file model_out" << std::endl;
 			exit(0);
 		}
-		std::cout << "LOADING" << std::endl;
-		bh.load(argv[2]);
-		std::string line;
+		Benchmark update{"update"};
 		std::vector<BrainHerder> cs;
-		std::ifstream infile(argv[3]);
-		while (std::getline(infile, line)) {
-			cs.emplace_back(0.0f);
-			cs.back().load(line);
+		{
+			Benchmark load{"load"};
+			bh.load(argv[2]);
+			std::ifstream infile(argv[3]);
+			std::string line;
+			while (std::getline(infile, line)) {
+				cs.emplace_back(0.0f);
+				cs.back().load(line);
+			}
 		}
-		std::cout << "DONE" << std::endl;
 		int winners = 0;
 		int total_uframes = 0;
 		int total_bframes = 0;
@@ -251,6 +281,7 @@ int main(int argc, char* argv[])
 		std::cout << (bh.umodel.net->is_training() ? "TRAINING" : "EVALUATING") << std::endl;
 		std::cout << "LR: " << bh.umodel.optimizer.options.learning_rate() << std::endl;
 		for(int epoch = 0; epoch < 5; epoch++) {
+			Benchmark bepoch{"epoch"};
 			bh.umodel.optimizer.zero_grad();
 			bh.bmodel.optimizer.zero_grad();
 			for(auto &c: cs) {
@@ -279,9 +310,8 @@ int main(int argc, char* argv[])
 				}
 				if(avg_game_reward > high_reward) {
 					high_reward = avg_game_reward;
-					high_game = line;
+					// high_game = line;
 				}
-				std::cout << "#" << std::flush;	
 			}
 			bh.umodel.optimizer.step();
 			bh.bmodel.optimizer.step();

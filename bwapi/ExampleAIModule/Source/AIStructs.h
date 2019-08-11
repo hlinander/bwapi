@@ -150,6 +150,7 @@ struct Action {
 };
 
 
+
 const int N_HIDDEN = 64;
 
 float relu(const float x);
@@ -176,11 +177,9 @@ struct Net : torch::nn::Module {
 
 	static torch::Device get_device() {
 		if (torch::cuda::is_available()) {
-			std::cout << "CUDA is available! Training on GPU." << std::endl;
 			return torch::kCUDA;
 		}
 		else {
-			std::cout <<  "Training on CPU" << std::endl;
 			return torch::kCPU;
 		}
 	}
@@ -224,6 +223,7 @@ struct Model {
 	void save(Archive &a) const
 	{
 		a(cereal::make_nvp("actions", actions));
+		a(cereal::make_nvp("oh_actions", one_hot_actions));
 		a(cereal::make_nvp("states", states));
 		a(cereal::make_nvp("immidiate_rewards", immidiate_rewards));
 		a(cereal::make_nvp("probs", probs));
@@ -241,6 +241,7 @@ struct Model {
 	void load(Archive &a)
 	{
 		a(cereal::make_nvp("actions", actions));
+		a(cereal::make_nvp("oh_actions", one_hot_actions));
 		a(cereal::make_nvp("states", states));
 		a(cereal::make_nvp("immidiate_rewards", immidiate_rewards));
 		a(cereal::make_nvp("probs", probs));
@@ -258,7 +259,9 @@ struct Model {
 
 	torch::Tensor forward(StateParam &s) {
 		auto ts = torch::from_blob(static_cast<void*>(s.data()), {1, StateParam::count()}, torch::kFloat32);
+		// std::cout << "To device!" << std::endl << std::flush;
 		auto dts = ts.to(net->device);
+		// std::cout << "Forward!" << std::endl << std::flush;
 		return net->forward(dts);
 		// return torch::ones({1, TAction::max()});
 	}
@@ -278,7 +281,9 @@ struct Model {
 	}
 
 	TAction get_action(StateParam &s) {
-		torch::Tensor out = torch::softmax(forward(s), -1);
+		auto tout = forward(s);
+		torch::Tensor out = torch::softmax(tout, -1).to(torch::kCPU);
+		// std::cout << "On CPU!" << std::endl << std::flush;
 		auto out_a = out.accessor<float,2>();
 		float eps = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
 		float r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
@@ -316,6 +321,8 @@ struct Model {
 	void record_action(StateParam &s, TAction &a, float immidiate_reward, float seconds) {
 		states.push_back(s);
 		actions.push_back(a);
+		one_hot_actions.emplace_back(std::array<float, TAction::max()>{});
+		one_hot_actions.back()[a] = 1.0;
 		immidiate_rewards.push_back(immidiate_reward);
 		time_stamps.push_back(seconds);
 	}
@@ -332,6 +339,7 @@ struct Model {
 	std::shared_ptr<NetType> net;
 	torch::optim::Adam optimizer;
 	std::vector<TAction> actions;
+	std::vector<std::array<float, TAction::max()>> one_hot_actions;
 	std::vector<StateParam> states;
 	std::vector<uint32_t> time_stamps;
 	std::vector<float> immidiate_rewards;
@@ -382,6 +390,71 @@ struct BrainHerder {
 		return false;
 	}
 };
+
+struct CumBenchmark {
+	struct Report {
+		Report()
+		: time_total{0}
+		, count{0} {}
+		std::chrono::duration<double> time_total;
+		size_t count;
+	};
+
+	void report(const std::string &name, const std::chrono::duration<double> dur) {
+		auto &b = benchmarks[name];
+		b.time_total += dur;
+		++b.count;
+	}
+
+	void print() {
+		for(auto& b: benchmarks) {
+			auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(b.second.time_total).count();
+			std::cout << "[CBench] " << b.first << ": " << static_cast<float>(ms) / b.second.count 
+					  << " (" << ms << " over " << b.second.count << ")" << std::endl;
+		}
+	}
+	std::unordered_map<std::string, Report> benchmarks;
+};
+
+struct Benchmark {
+	Benchmark(CumBenchmark &cb, std::string &&n)
+		: start{std::chrono::high_resolution_clock::now()}
+		, name(std::move(n))
+		, cum(&cb) 
+		, stopped(false)
+	{}
+	Benchmark(std::string &&n)
+		: start{std::chrono::high_resolution_clock::now()}
+		, name{std::move(n)}
+		, cum(nullptr)
+		, stopped(false)
+	 {
+		//  std::cout << "[Bench] " << name << std::endl;
+	 }
+	~Benchmark() {
+		stop();
+	}
+
+	void stop() {
+		if(stopped) {
+			return;
+		}
+		stopped = true;
+		auto dur = std::chrono::high_resolution_clock::now() - start;
+		if(!cum) {
+			auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(dur).count();
+			std::cout << "[Bench] " << name << " took " << ms << " ms" << std::endl;
+		}
+		else {
+			cum->report(name, dur);
+		}
+	}
+	std::chrono::time_point<std::chrono::system_clock> start;
+	std::string name;
+	CumBenchmark *cum;
+	bool stopped;
+};
+
 
 #endif // __AI_STRUCTS_H_DEF__
 
