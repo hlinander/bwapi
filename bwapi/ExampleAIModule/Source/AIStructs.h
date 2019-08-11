@@ -117,11 +117,11 @@ static const char* action_to_string(BA a) {
 template<typename ActionEnum>
 struct Action {
 	typedef ActionEnum Type;
-	static constexpr const size_t MAX = static_cast<size_t>(ActionEnum::MAX);
+	static constexpr size_t max() { return static_cast<size_t>(ActionEnum::MAX); }
 	Action(ActionEnum a = static_cast<ActionEnum>(0)) : action{a} {}
 	operator int() const {
 		return static_cast<int>(action);
-	}
+	} 
 	Action<ActionEnum>& operator =(const int rhs) {
 		action = static_cast<Action>(rhs);
 		return *this;
@@ -161,7 +161,7 @@ struct Net : torch::nn::Module {
 		bn = register_module("bn", torch::nn::BatchNorm(StateParam::count()));
 		fc1 = register_module("fc1", torch::nn::Linear(StateParam::count(), N_HIDDEN));
 		fc2 = register_module("fc2", torch::nn::Linear(N_HIDDEN, N_HIDDEN));
-		fc3 = register_module("fc3", torch::nn::Linear(N_HIDDEN, TAction::MAX));
+		fc3 = register_module("fc3", torch::nn::Linear(N_HIDDEN, TAction::max()));
 		torch::nn::init::xavier_normal_(fc1->weight);
 		torch::nn::init::xavier_normal_(fc2->weight);
 		torch::nn::init::xavier_normal_(fc3->weight);
@@ -268,16 +268,16 @@ struct Model {
 		TAction sampled_action;
 		TAction max_action;
 		float max = 0.0f;
-		for (; action != TAction::MAX; ++action) {
+		for (; action != TAction::max(); ++action) {
 			float p = out_a[0][static_cast<int>(action)];
 			if(p > max) {
 				max = p;
 				max_action = action;	
 			}
 		}
-		for (; sampled_action != TAction::MAX; ++sampled_action) {
+		for (; sampled_action != TAction::max(); ++sampled_action) {
 			v += out_a[0][static_cast<int>(sampled_action)];
-			if (r <= v || sampled_action == TAction::MAX - 1) {
+			if (r <= v || sampled_action == TAction::max() - 1) {
 				//probs.push_back(out_a[0][static_cast<int>(sampled_action)]);
 				break;
 			}

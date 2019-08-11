@@ -23,7 +23,8 @@ namespace BWAPI
   template<class T, int UnknownId>
   class Type
   {
-  protected:
+  // protected:
+    public:
     /// @cond HIDDEN
     /// <summary>Primitive storage unit for the type identifier (type id).</summary>
     int tid;

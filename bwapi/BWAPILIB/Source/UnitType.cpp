@@ -21,7 +21,7 @@ namespace BWAPI
   std::string unitLocalNames[UnitTypes::Enum::MAX];
 
   template <>
-  const std::string Type<UnitType, UnitTypes::Enum::Unknown>::typeNames[UnitTypes::Enum::MAX] =
+  const std::string Type<UnitType, UnitTypes::Enum::Unknown>::typeNames[UnitTypes::Enum::Unknown + 1] =
   {
     "Terran_Marine",
     "Terran_Ghost",
@@ -2588,4 +2588,8 @@ namespace BWAPI
       return false;
     }
   }
+  // void forceinit() {
+  // // const std::string Type<UnitType, static_cast<int>(UnitTypes::Enum::Unknown)>::typeNames[UnitTypes::Enum::MAX] =
+  // std::cout <<Type<UnitType, static_cast<int>(UnitTypes::Enum::Unknown)>::typeNames[0];
+  // }
 }

@@ -1,2 +1,0 @@
-#!/usr/bin/env bash
-LD_LIBRARY_PATH=/home/herden/projects/scai/openbw/pytorch/torch/lib64 ./Overmind $@

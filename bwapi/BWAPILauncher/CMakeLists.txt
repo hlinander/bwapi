@@ -14,6 +14,7 @@ add_executable(BWAPILauncher
 )
 
 target_link_libraries(BWAPILauncher BWAPI)
+# target_link_libraries(BWAPILauncher "${TORCH_LIBRARIES}")
 
 if (NOT WIN32)
   target_link_libraries(BWAPILauncher dl)
