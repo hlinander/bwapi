@@ -157,7 +157,7 @@ float drelu(const float x);
 
 template<typename TAction>
 struct Net : torch::nn::Module {
-	Net() {
+	Net() : device(get_device()) {
 		bn = register_module("bn", torch::nn::BatchNorm(StateParam::count()));
 		fc1 = register_module("fc1", torch::nn::Linear(StateParam::count(), N_HIDDEN));
 		fc2 = register_module("fc2", torch::nn::Linear(N_HIDDEN, N_HIDDEN));
@@ -168,6 +168,21 @@ struct Net : torch::nn::Module {
 		torch::nn::init::zeros_(fc3->bias);
 		torch::nn::init::zeros_(fc2->bias);
 		torch::nn::init::zeros_(fc1->bias);
+		// fc1->to(device);
+		// fc2->to(device);
+		// fc3->to(device);
+		to(device);
+	}
+
+	static torch::Device get_device() {
+		if (torch::cuda::is_available()) {
+			std::cout << "CUDA is available! Training on GPU." << std::endl;
+			return torch::kCUDA;
+		}
+		else {
+			std::cout <<  "Training on CPU" << std::endl;
+			return torch::kCPU;
+		}
 	}
 
 	torch::Tensor forward(torch::Tensor x) {
@@ -184,6 +199,7 @@ struct Net : torch::nn::Module {
 
 	torch::nn::BatchNorm bn{nullptr};
 	torch::nn::Linear fc1{nullptr}, fc2{nullptr}, fc3{nullptr};
+	torch::Device device;
 };
 
 template<typename TAction>
@@ -242,7 +258,9 @@ struct Model {
 
 	torch::Tensor forward(StateParam &s) {
 		auto ts = torch::from_blob(static_cast<void*>(s.data()), {1, StateParam::count()}, torch::kFloat32);
-		return net->forward(ts);
+		auto dts = ts.to(net->device);
+		return net->forward(dts);
+		// return torch::ones({1, TAction::max()});
 	}
 
 	torch::Tensor forward_batch_nice(size_t first, size_t last) {
@@ -250,7 +268,9 @@ struct Model {
 	}
 
 	torch::Tensor get_batch(size_t first, size_t last) {
-		return torch::from_blob(static_cast<void *>(states.data() + first), {static_cast<long>(last - first), StateParam::count()}, torch::kFloat32);
+		auto ret = torch::from_blob(static_cast<void *>(states.data() + first), {static_cast<long>(last - first), StateParam::count()}, torch::kFloat32);
+		auto dret = ret.to(net->device);
+		return dret;
 	}
 
 	torch::Tensor forward_batch_nice(torch::Tensor t) {
@@ -338,13 +358,18 @@ struct BrainHerder {
 		std::stringstream ss;
 		cereal::BinaryOutputArchive ar{ss};
 		ar(cereal::make_nvp("winner", winner));
+		DEBUG("before models\n");
 		ar(cereal::make_nvp("umodel", umodel));
 		ar(cereal::make_nvp("bmodel", bmodel));
+		DEBUG("after models\n");
 		ar(cereal::make_nvp("avg_ureward", avg_ureward));
 		ar(cereal::make_nvp("avg_breward", avg_breward));
 		std::ofstream out(path, std::ios_base::binary);
+		DEBUG("opened file\n");
 		auto serial{ ss.str() };
+		DEBUG("serialized file\n");
 		out.write(serial.c_str(), serial.length());
+		DEBUG("wrote file file\n");
 	}
 
 	bool load(const std::string& path) {

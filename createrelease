@@ -3,4 +3,4 @@ mkdir -p build
 cd build
 #export CC=clang-8
 #export CXX=clang++-8
-cmake .. -DCMAKE_BUILD_TYPE=Release -DOPENBW_DIR=../../openbw -DCMAKE_PREFIX_PATH=/torch/libtorch -DCMAKE_EXPORT_COMPILE_COMMANDS=YES
+cmake .. -DCMAKE_BUILD_TYPE=Release -DOPENBW_DIR=../../openbw -DCMAKE_PREFIX_PATH=/home/herden/projects/scai/bwng/pytorch/torch -DCMAKE_EXPORT_COMPILE_COMMANDS=YES

@@ -557,6 +557,7 @@ void ExampleAIModule::onStart()
 	}
 	bh.umodel.net->eval();
 	bh.bmodel.net->eval();
+	// std::cout << "Model leaded" << std::endl;
 	// Hello World!
 	// Broodwar->sendText("Hello world!");
 
@@ -620,8 +621,10 @@ void ExampleAIModule::onEnd(bool isWinner)
 		bh.winner = isWinner ? 1 : (-1);
 	}
 	// std::cout << "THE END! I AM " << (isWinner ? "WINNER" : "LOOSER") << std::endl;
+	std::cout << "Trying to save at " << get_resname() << std::endl;
 	bh.save(get_resname());
-	std::cout << "(" << bh.umodel.get_frames() << ", " <<  bh.bmodel.get_frames() << ")";
+	std::cout << "(" << bh.umodel.get_frames() << ", " <<  bh.bmodel.get_frames() << ")" << std::endl;
+	fflush(stdout);
 //   std::cout << "THEOTHERSIDE!" << std::endl;
 }
 

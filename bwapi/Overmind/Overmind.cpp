@@ -10,7 +10,7 @@
 //#include <torch/torch.h>
 
 const float LR = 0.001;//0.00000001;
-const int BATCH_SIZE = 30;
+const int BATCH_SIZE = 3000;
 
 using stat_map = std::unordered_map<std::string, size_t>;
 using state_reward_map = std::unordered_map<size_t, float>;
@@ -143,17 +143,18 @@ float update_model(int winner, Model<T> &m, Model<T> &experience, stat_map &stat
 	DEBUG("Update with batches...\n");
 	DEBUG("Frames: %d, Batchsize: %d\n", experience.get_frames(), BATCH_SIZE);
 	// for (int frame = experience.get_frames() - 1; frame >= BATCH_SIZE; frame-=BATCH_SIZE) {
-	for (int frame = 0; frame < experience.get_frames() - BATCH_SIZE; frame+=BATCH_SIZE) {
+	for (int frame = 0; frame < experience.get_frames(); frame+=BATCH_SIZE) {
 		DEBUG("Frame %d\n", frame);
+		size_t actual_bs = std::min(BATCH_SIZE, experience.get_frames() - frame);
 		// auto batch = std::vector<State<N>>(&(experience.states[frame - BATCH_SIZE]), &(experience.states[frame]));
 		// auto batch_rewards = std::vector<float>(&reward.rewards[frame - BATCH_SIZE], &reward.rewards[frame]);
 		// auto batch_actions = std::vector<T>( &(experience.actions[frame - BATCH_SIZE]), &(experience.actions[frame]));
 
-		auto logp = m.forward_batch_nice(experience.get_batch(frame, frame + BATCH_SIZE));
+		auto logp = m.forward_batch_nice(experience.get_batch(frame, frame + actual_bs));
 		auto p = torch::softmax(logp, -1);
-		auto old_p = torch::softmax(experience.forward_batch_nice(frame, frame + BATCH_SIZE), -1);
+		auto old_p = torch::softmax(experience.forward_batch_nice(frame, frame + actual_bs), -1);
 		loss = torch::tensor({0.0f});
-		for(int i = 0; i < BATCH_SIZE; ++i) {
+		for(int i = 0; i < actual_bs; ++i) {
 			float adv = (reward.rewards[frame + i]);
 			auto r = p[i][experience.actions[frame + i]] / old_p[i][experience.actions[frame + i]];
 			loss += torch::min(r * adv, torch::clamp(r, 1 - 0.2, 1 + 0.2) * adv);
