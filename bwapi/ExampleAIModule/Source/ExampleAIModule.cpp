@@ -80,9 +80,12 @@ static StateParam createState() {
 	size_t index = 0;
 	for(auto& u: Broodwar->self()->getUnits()) {
 		writeUnitState(u, p.friendly[index]);
+		++index;
 	}
+	index = 0;
 	for(auto& u: Broodwar->enemy()->getUnits()) {
 		writeUnitState(u, p.enemy[index]);
+		++index;
 	}
 	return p;
 }

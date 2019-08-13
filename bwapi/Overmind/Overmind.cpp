@@ -15,8 +15,8 @@ const int BATCH_SIZE = 1000;
 using stat_map = std::unordered_map<std::string, size_t>;
 using state_reward_map = std::unordered_map<size_t, float>;
 
-state_reward_map u_reward_map = {{STATE_OFF(minerals), 1.0}};
-state_reward_map b_reward_map = {{STATE_OFF(minerals), 1.0}, {STATE_OFF(n_marines), 2.0}};
+state_reward_map u_reward_map = {{STATE_OFF(minerals), 10.0}};
+state_reward_map b_reward_map = {{STATE_OFF(minerals), 10.0}, {STATE_OFF(n_marines), 2.0}};
 
 void torch_tests();
 void test_load_save();
@@ -114,8 +114,8 @@ void debug_models(bool winner, Model<T> &prev, Model<T> &next) {
 	std::cout << "reward[0]: " << reward.rewards[0] << std::endl;
 	for(int frame = 0; frame < prev.get_frames(); ++frame) {
 		print_state(prev.states[frame]);
-		auto p = torch::softmax(prev.forward(prev.states[frame]), -1);
-		auto pnext = torch::softmax(next.forward(prev.states[frame]), -1);
+		auto p = torch::softmax(prev.forward(prev.states[frame]), -1).to(torch::kCPU);
+		auto pnext = torch::softmax(next.forward(prev.states[frame]), -1).to(torch::kCPU);
 		auto action = prev.actions[frame];
 		float r = pnext[0][action].template item<float>() / p[0][action].template item<float>();
 		auto rs = pnext[0] / p[0];
@@ -154,17 +154,18 @@ float update_model(int winner, Model<T> &m, Model<T> &experience, stat_map &stat
 		auto p = torch::softmax(logp, -1);
 		auto old_p = torch::softmax(experience.forward_batch_nice(frame, frame + actual_bs), -1);
 
-		auto mask = torch::from_blob(static_cast<void*>(&experience.one_hot_actions[frame]), {actual_bs, T::max()}, torch::kFloat32).to(m.net->device);
+		// auto mask = torch::from_blob(static_cast<void*>(&experience.one_hot_actions[frame]), {actual_bs, T::max()}, torch::kFloat32).to(m.net->device);
 		std::array<float, BATCH_SIZE * T::max()> rewards_batch{};
 		for(int i = 0; i < actual_bs; ++i) {
 			rewards_batch[i * T::max() + experience.actions[frame + i]] = reward.rewards[frame + i];
+			// rewards_batch[i * T::max()] = 1.0;//reward.rewards[frame + i];
 		}
 		auto trewards =torch::from_blob(static_cast<void*>(rewards_batch.data()), {actual_bs, T::max()}, torch::kFloat32).to(m.net->device);
 		//auto ones = torch::ones({actual_bs, T::max()}, torch::kFloat32);
 		// auto ones_masked = ones - mask;
 		// auto r = mask * p 
 		// auto masked_p = mask * (p.log());
-		auto masked_r = mask * (p / old_p);
+		auto masked_r = (p / old_p);
 		auto lloss = torch::min(masked_r * trewards, torch::clamp(masked_r, 1.0 - 0.2, 1.0 + 0.2) * trewards).sum();
 		// auto indices = torch::tensor()
 		// auto loss 
