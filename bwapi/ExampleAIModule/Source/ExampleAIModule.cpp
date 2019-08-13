@@ -46,7 +46,7 @@ static std::string get_resname() {
 	// for (auto& token : tokens) {
 	// 	std::cout << token << " : ";
 	// }
-	ss << "results/" << tokens[0] << "_result_" << tokens[1];
+	ss << "results/" << tokens[0];
 	return ss.str();
 }
 
