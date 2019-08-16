@@ -207,8 +207,8 @@ static bool commitAction(BuildAction a) {
 		filter(Broodwar->self()->getUnits(), BWAPI::Filter::IsWorker, 
 			[&didCommit](BWAPI::Unit u){
 				if(!u->isConstructing()) {
-					auto target_loc = Broodwar->getBuildLocation(BWAPI::UnitTypes::Terran_Supply_Depot, u->getTilePosition());
 					if(requirements(BWAPI::UnitTypes::Terran_Supply_Depot)) {
+						auto target_loc = Broodwar->getBuildLocation(BWAPI::UnitTypes::Terran_Supply_Depot, u->getTilePosition());
 						u->build(BWAPI::UnitTypes::Terran_Supply_Depot, target_loc);
 						didCommit = true;
 					}
@@ -221,8 +221,8 @@ static bool commitAction(BuildAction a) {
 		filter(Broodwar->self()->getUnits(), BWAPI::Filter::IsWorker, 
 			[&didCommit](BWAPI::Unit u){
 				if(!u->isConstructing()) {
-					auto target_loc = Broodwar->getBuildLocation(BWAPI::UnitTypes::Terran_Barracks, u->getTilePosition());
 					if(requirements(BWAPI::UnitTypes::Terran_Barracks)) {
+						auto target_loc = Broodwar->getBuildLocation(BWAPI::UnitTypes::Terran_Barracks, u->getTilePosition());
 						u->build(BWAPI::UnitTypes::Terran_Barracks, target_loc);
 						didCommit = true;
 					}
@@ -249,7 +249,7 @@ static bool commitAction(UnitAction a, Unit me, bool debug) {
 		//	return left->getHitPoints() < right->getHitPoints();
 		//});
 		auto target = me->getClosestUnit(IsEnemy && !IsBuilding);
-		if (target && !me->getType().isWorker()) {
+		if (target) {
 			me->attack(target);
 			Broodwar->drawLineMap(me->getPosition(), target->getPosition(), Color(255, 0, 0));
 			didCommit = true;

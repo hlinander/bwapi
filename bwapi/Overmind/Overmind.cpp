@@ -7,6 +7,7 @@
 #include <chrono>
 #include <ctime>
 #include "AIStructs.h"
+#include "json.hpp"
 //#include <torch/torch.h>
 
 const float LR = 0.001;//0.00000001;
@@ -15,8 +16,8 @@ const int BATCH_SIZE = 1000;
 using stat_map = std::unordered_map<std::string, size_t>;
 using state_reward_map = std::unordered_map<size_t, float>;
 
-state_reward_map u_reward_map = {{STATE_OFF(minerals), 10.0}};
-state_reward_map b_reward_map = {{STATE_OFF(minerals), 10.0}, {STATE_OFF(n_marines), 2.0}};
+state_reward_map u_reward_map = {{STATE_OFF(minerals), 5.0}};
+state_reward_map b_reward_map = {{STATE_OFF(minerals), 5.0}};
 
 void torch_tests();
 void test_load_save();
@@ -45,6 +46,12 @@ void generate_plot(std::string path, BrainHerder &bh) {
 	for(int i = 0; i < bh.umodel.avg_rewards.size(); ++i) {
 		outfile << i << " " << bh.umodel.avg_rewards[i] << " " << bh.bmodel.avg_rewards[i] << std::endl;
 	}
+}
+
+void write_json(std::string path, nlohmann::json &json) {
+	std::ofstream outfile;
+	outfile.open(path);
+	outfile << json;
 }
 
 void print_stats(const stat_map &s, size_t total_frames) {
@@ -257,6 +264,7 @@ int main(int argc, char* argv[])
 			std::cout << "-update model result_list_file model_out" << std::endl;
 			exit(0);
 		}
+		nlohmann::json json;
 		Benchmark update{"update"};
 		std::vector<BrainHerder> cs;
 		{
@@ -330,6 +338,9 @@ int main(int argc, char* argv[])
 		bh.save(argv[4]);
 		std::cout << std::endl << total << " games with " << winners << " winners, avg. reward " << bh.avg_ureward << std::endl;
 		std::cout << "Highest reward game is " << high_game << " with " << high_reward << std::endl;
+		json["avg_ureward"] = bh.avg_ureward;
+		json["avg_breward"] = bh.avg_breward;
+		write_json(std::string(argv[4]) + "_stats.json", json);
 		print_stats(ustats, total_uframes);
 		print_stats(bstats, total_bframes);
 		generate_plot(std::string(argv[4]) + "_rewards", bh);

@@ -176,6 +176,9 @@ struct Net : torch::nn::Module {
 	}
 
 	static torch::Device get_device() {
+		if(getenv("NO_CUDA")) {
+			return torch::kCPU;
+		}
 		if (torch::cuda::is_available()) {
 			return torch::kCUDA;
 		}
@@ -250,7 +253,7 @@ struct Model {
 		std::string s;
 		a(s);
 		std::stringstream ss{s};
-		torch::load(net, ss);		
+		torch::load(net, ss, net->device);		
 		std::string so;
 		a(so);
 		std::stringstream sso{so};

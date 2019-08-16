@@ -4,6 +4,7 @@ include_directories(
   ../ExampleAIModule/Source/cereal-1.2.2/include
   ../ExampleAIModule/Source/eigen
   ../ExampleAIModule/Source/
+  ../../json
 )
 
 set(CMAKE_SHARED_LIBRARY_PREFIX "")
