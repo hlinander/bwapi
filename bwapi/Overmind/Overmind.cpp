@@ -10,14 +10,14 @@
 #include "json.hpp"
 //#include <torch/torch.h>
 
-const float LR = 0.001;//0.00000001;
+const float LR = 0.0005;//0.00000001;
 const int BATCH_SIZE = 1000;
 
 using stat_map = std::unordered_map<std::string, size_t>;
 using state_reward_map = std::unordered_map<size_t, float>;
 
-state_reward_map u_reward_map = {{STATE_OFF(minerals), 5.0}};
-state_reward_map b_reward_map = {{STATE_OFF(minerals), 5.0}};
+state_reward_map u_reward_map = {{STATE_OFF(minerals), 1.0}};
+state_reward_map b_reward_map = {{STATE_OFF(minerals), 1.0}};
 
 void torch_tests();
 void test_load_save();
@@ -91,7 +91,7 @@ Reward calculate_rewards(int winner, Model<T> &experience, state_reward_map &sr)
 	ret.rewards.resize(experience.get_frames());
 	std::fill(std::begin(ret.rewards), std::end(ret.rewards), 0.0f);
 	ret.total_reward = 0.0;
-	float reward = winner * 10.0f;
+	float reward = winner * 2.0f;
 	for (int frame = experience.get_frames() - 1; frame >= 1; --frame) {
 		reward += experience.immidiate_rewards[frame];
 		for(auto& reward_pair: sr) {
