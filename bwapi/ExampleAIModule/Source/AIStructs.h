@@ -257,7 +257,7 @@ struct Model {
 		std::string so;
 		a(so);
 		std::stringstream sso{so};
-		torch::load(optimizer, sso);		
+		torch::load(optimizer, sso, net->device);		
 	}
 
 	torch::Tensor forward(StateParam &s) {
