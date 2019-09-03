@@ -10,7 +10,7 @@
 #include "json.hpp"
 //#include <torch/torch.h>
 
-const float LR = 0.001;//0.00000001;
+const float LR = 0.0001;//0.00000001;
 const int BATCH_SIZE = 1000;
 
 using stat_map = std::unordered_map<std::string, size_t>;
@@ -316,6 +316,9 @@ int main(int argc, char* argv[])
 		std::cout << "Highest reward game is " << high_game << " with " << high_reward << std::endl;
 		json["avg_ureward"] = bh.avg_ureward;
 		json["avg_breward"] = bh.avg_breward;
+		json["lr"] = LR;
+		json["u_rewards"] = b_reward_map;
+		json["b_rewards"] = b_reward_map;
 		write_json(std::string(argv[4]) + "_stats.json", json);
 		print_stats(ustats, total_uframes);
 		print_stats(bstats, total_bframes);
