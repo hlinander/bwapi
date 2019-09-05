@@ -35,5 +35,6 @@ private:
   std::chrono::high_resolution_clock::time_point start_chrono;
 	bool debug;
 	bool force_lose;
+  int generation;
   CumBenchmark cb;
 };

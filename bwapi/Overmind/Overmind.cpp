@@ -91,7 +91,7 @@ Reward calculate_rewards(int winner, Model<T> &experience, state_reward_map &sr)
 	ret.rewards.resize(experience.get_frames());
 	std::fill(std::begin(ret.rewards), std::end(ret.rewards), 0.0f);
 	ret.total_reward = 0.0;
-	float reward = winner * 2.0f;
+	float reward = winner * 0.02f;
 	for (int frame = experience.get_frames() - 1; frame >= 1; --frame) {
 		reward += experience.immidiate_rewards[frame];
 		for(auto& reward_pair: sr) {

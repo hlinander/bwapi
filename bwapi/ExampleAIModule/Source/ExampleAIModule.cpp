@@ -34,9 +34,14 @@ static std::vector<std::string> get_tokens(std::string s) {
 static std::string get_dbname() {
 	std::stringstream ss;
 	auto tokens = get_tokens(Broodwar->self()->getName());
-
-	ss << "models/" << tokens[0];
+	ss << "models/" << tokens[0] << tokens[2];
 	return ss.str();
+}
+
+static int get_generation() {
+	std::stringstream ss;
+	auto tokens = get_tokens(Broodwar->self()->getName());
+	return std::atoi(tokens[1].c_str());
 }
 
 static std::string get_resname() {
@@ -46,7 +51,7 @@ static std::string get_resname() {
 	// for (auto& token : tokens) {
 	// 	std::cout << token << " : ";
 	// }
-	ss << "results/" << tokens[0];
+	ss << "results/" << tokens[0] << tokens[2];
 	return ss.str();
 }
 
@@ -249,7 +254,7 @@ static bool commitAction(UnitAction a, Unit me, bool debug) {
 		//	return left->getHitPoints() < right->getHitPoints();
 		//});
 		auto target = me->getClosestUnit(IsEnemy && !IsBuilding);
-		if (target) {
+		if (target/* && !me->getType().isWorker()*/) {
 			me->attack(target);
 			Broodwar->drawLineMap(me->getPosition(), target->getPosition(), Color(255, 0, 0));
 			didCommit = true;
@@ -322,6 +327,7 @@ void ExampleAIModule::onStart()
 			Broodwar->sendText("My pants are on my head!");
 		}
 	}
+	generation = get_generation();
 	bh.umodel.net->eval();
 	bh.bmodel.net->eval();
 	// std::cout << "Model leaded" << std::endl;
@@ -397,8 +403,23 @@ void ExampleAIModule::onEnd(bool isWinner)
 //   std::cout << "THEOTHERSIDE!" << std::endl;
 }
 
-static uint32_t frames = 0;
+static uint32_t frames = -1;
 static uint32_t nexttick = 0;
+
+static bool action_allowed(int frame, int generation, int max_freq) {
+	float full_grown_generation = 100;
+	float min_freq = 30 * 10;
+	if(generation >= full_grown_generation && frame % max_freq == 0) {
+		return true;
+	}
+	// generation = full_grown_generation => freq = max_freq 
+	// min_freq - (min_freq - C) = max_frax
+	int freq = (min_freq - (min_freq - max_freq) * (float)generation / full_grown_generation);
+	if(0 == frame % freq) {
+		return true;
+	}
+	return false;
+}
 
 void ExampleAIModule::onFrame()
 {
@@ -427,7 +448,8 @@ void ExampleAIModule::onFrame()
 	}
 	Benchmark bmaction{cb, "buildAction"};
 	auto state{ createState() };
-	if((frames & 0xf) == 0) {
+	if(action_allowed(frames, generation, 15))
+	{
 		Benchmark bmfullaction{cb, "buildFullAction"};
 		auto baction{ bh.bmodel.get_action(state) };
 		Benchmark bmcaction{cb, "commitBuildAction"};
@@ -477,13 +499,16 @@ void ExampleAIModule::onFrame()
 		// If the unit is a worker unit
 		if (!u->getType().isBuilding())
 		{
-			if((frames % 4) == 0)
+			if(action_allowed(frames, generation, 4))
 			{
 				Benchmark bmuaction{cb, "unitAction"};
 				writeUnitState(u, state.me);
 				auto uaction{ bh.umodel.get_action(state) };
 				Benchmark bmucaction{cb, "commitUnitAction"};
 				if(commitAction(uaction, u, debug)) {
+					if(generation < 10) {
+						Broodwar->sendText("My function is to %s", uaction.name());
+					}
 					bh.umodel.record_action(state, uaction, 0.0f, frames);
 				}
 				else {
