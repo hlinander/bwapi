@@ -409,8 +409,9 @@ static uint32_t nexttick = 0;
 static bool action_allowed(int frame, int generation, int max_freq) {
 	float full_grown_generation = 100;
 	float min_freq = 30 * 10;
-	if(generation >= full_grown_generation && frame % max_freq == 0) {
-		return true;
+	if(generation >= full_grown_generation)
+	{
+		return frame % max_freq == 0;
 	}
 	// generation = full_grown_generation => freq = max_freq 
 	// min_freq - (min_freq - C) = max_frax
